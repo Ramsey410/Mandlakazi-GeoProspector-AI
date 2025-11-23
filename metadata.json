@@ -1,0 +1,7 @@
+{
+  "name": "Mandlakazi GeoProspector AI",
+  "description": "An automated geological mapping and mining evaluation tool using satellite data simulation and AI analysis.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

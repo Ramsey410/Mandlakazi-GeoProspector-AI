@@ -1,0 +1,185 @@
+import React, { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area } from 'recharts';
+import { FileText, Edit3, Download, BarChart2, AlertTriangle } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { MiningReport, GeoDataPoint } from '../types';
+
+interface DashboardProps {
+  report: MiningReport | null;
+  chartData: GeoDataPoint[];
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
+  const [activeTab, setActiveTab] = useState<'report' | 'data'>('report');
+  const [editableReport, setEditableReport] = useState<string>("");
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (report) {
+      setEditableReport(report.rawMarkdown || "");
+    }
+  }, [report]);
+
+  if (!report) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500">
+        <BarChart2 className="w-16 h-16 mb-4 opacity-20" />
+        <p>Run an analysis to view geophysical models and reports.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950">
+      {/* Tabs */}
+      <div className="flex border-b border-slate-800 bg-slate-900">
+        <button
+          onClick={() => setActiveTab('report')}
+          className={`px-6 py-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === 'report' ? 'border-cyan-500 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <FileText className="w-4 h-4" /> Executive Report
+        </button>
+        <button
+          onClick={() => setActiveTab('data')}
+          className={`px-6 py-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === 'data' ? 'border-cyan-500 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <BarChart2 className="w-4 h-4" /> Geophysical Models
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        
+        {/* REPORT TAB */}
+        {activeTab === 'report' && (
+          <div className="max-w-4xl mx-auto space-y-6">
+            
+            {/* Header Actions */}
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-white">{report.title}</h2>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setIsEditing(!isEditing)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium border transition-colors ${isEditing ? 'bg-cyan-900/50 border-cyan-500 text-cyan-300' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}
+                    >
+                        <Edit3 className="w-3 h-3" /> {isEditing ? 'Done Editing' : 'Edit Report'}
+                    </button>
+                    <button className="flex items-center gap-2 px-3 py-1.5 rounded text-xs font-medium bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-colors">
+                        <Download className="w-3 h-3" /> Export PDF
+                    </button>
+                </div>
+            </div>
+
+            {/* Risk Alert */}
+            <div className="bg-amber-900/20 border border-amber-700/50 p-4 rounded-lg flex gap-3 items-start">
+                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                    <h4 className="text-amber-400 font-bold text-sm mb-1">Risk Assessment Summary</h4>
+                    <p className="text-slate-300 text-sm leading-relaxed">{report.riskAssessment}</p>
+                </div>
+            </div>
+
+            {/* Editor / Viewer */}
+            <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 shadow-xl">
+                {isEditing ? (
+                    <textarea 
+                        className="w-full h-[600px] bg-slate-950 text-slate-200 p-4 font-mono text-sm rounded border border-slate-700 focus:border-cyan-500 focus:outline-none"
+                        value={editableReport}
+                        onChange={(e) => setEditableReport(e.target.value)}
+                    />
+                ) : (
+                    <div className="prose prose-invert max-w-none prose-headings:text-cyan-100 prose-a:text-cyan-400 prose-strong:text-white">
+                        <ReactMarkdown>{editableReport}</ReactMarkdown>
+                    </div>
+                )}
+            </div>
+
+            {/* Sources */}
+            <div className="mt-8 border-t border-slate-800 pt-6">
+                <h4 className="text-sm font-bold text-slate-400 mb-3">Identified Data Sources (Scraped)</h4>
+                <ul className="space-y-1">
+                    {report.sources.map((source, idx) => (
+                        <li key={idx} className="text-xs text-cyan-600 truncate hover:text-cyan-400 cursor-pointer">
+                            <a href={source} target="_blank" rel="noreferrer">{source}</a>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+          </div>
+        )}
+
+        {/* DATA TAB */}
+        {activeTab === 'data' && (
+          <div className="space-y-8 max-w-5xl mx-auto">
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Chart 1: Resistivity */}
+                <div className="bg-slate-900 p-4 rounded-lg border border-slate-800">
+                    <h3 className="text-sm font-bold text-slate-300 mb-4">Resistivity Log (Simulated)</h3>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData} layout="vertical" margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                <XAxis type="number" stroke="#94a3b8" label={{ value: 'Ohm-m', position: 'insideBottom', offset: -5, fill: '#94a3b8' }} />
+                                <YAxis dataKey="depth" type="number" reversed stroke="#94a3b8" label={{ value: 'Depth (m)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}/>
+                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }} />
+                                <Area type="monotone" dataKey="resistivity" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.3} />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Chart 2: Magnetic Susceptibility */}
+                <div className="bg-slate-900 p-4 rounded-lg border border-slate-800">
+                    <h3 className="text-sm font-bold text-slate-300 mb-4">Magnetic Susceptibility</h3>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={chartData} layout="vertical" margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                                <XAxis type="number" stroke="#94a3b8" label={{ value: 'SI Units', position: 'insideBottom', offset: -5, fill: '#94a3b8' }} />
+                                <YAxis dataKey="depth" type="number" reversed stroke="#94a3b8" label={{ value: 'Depth (m)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }}/>
+                                <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }} />
+                                <Line type="monotone" dataKey="magneticSusceptibility" stroke="#06b6d4" strokeWidth={2} dot={false} />
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* Section: Mineral Potential Visualization */}
+            <div className="bg-slate-900 p-6 rounded-lg border border-slate-800">
+                <h3 className="text-lg font-bold text-white mb-2">Mineral Potential Matrix</h3>
+                <p className="text-sm text-slate-400 mb-6">AI-derived probability based on regional stratigraphy and spectral anomalies.</p>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {report.mineralPotential.map((mineral, idx) => (
+                        <div key={idx} className="bg-slate-800 p-4 rounded border border-slate-700 flex flex-col items-center justify-center text-center">
+                            <div className="w-12 h-12 rounded-full bg-cyan-900/50 flex items-center justify-center mb-2 text-cyan-400 font-bold border border-cyan-800">
+                                {mineral.substring(0, 2).toUpperCase()}
+                            </div>
+                            <span className="text-sm font-medium text-slate-200">{mineral}</span>
+                            <span className="text-xs text-green-400 mt-1">High Probability</span>
+                        </div>
+                    ))}
+                     <div className="bg-slate-800 p-4 rounded border border-slate-700 flex flex-col items-center justify-center text-center opacity-50">
+                            <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center mb-2 text-slate-400 font-bold">
+                                ??
+                            </div>
+                            <span className="text-sm font-medium text-slate-400">Other REE</span>
+                            <span className="text-xs text-slate-500 mt-1">Low Data Confidence</span>
+                        </div>
+                </div>
+            </div>
+
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
