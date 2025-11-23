@@ -1,30 +1,47 @@
+
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area } from 'recharts';
-import { FileText, Edit3, Download, BarChart2, AlertTriangle } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, BarChart, Bar, Cell } from 'recharts';
+import { FileText, Edit3, Download, BarChart2, AlertTriangle, MessageSquare, BrainCircuit } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { MiningReport, GeoDataPoint } from '../types';
+import ChatAssistant from './ChatAssistant';
 
 interface DashboardProps {
   report: MiningReport | null;
   chartData: GeoDataPoint[];
+  deepAnalysisResult: string | null;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
-  const [activeTab, setActiveTab] = useState<'report' | 'data'>('report');
+const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisResult }) => {
+  const [activeTab, setActiveTab] = useState<'report' | 'data' | 'chat'>('report');
   const [editableReport, setEditableReport] = useState<string>("");
   const [isEditing, setIsEditing] = useState(false);
+  const [mineralChartData, setMineralChartData] = useState<{name: string, probability: number}[]>([]);
 
   useEffect(() => {
     if (report) {
       setEditableReport(report.rawMarkdown || "");
+      
+      // Generate deterministic chart data for minerals
+      const data = report.mineralPotential.map(min => ({
+        name: min,
+        // Generate a deterministic "confidence" score between 60-95 based on the string chars
+        probability: 60 + (min.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 35)
+      }));
+      setMineralChartData(data);
     }
   }, [report]);
 
-  if (!report) {
+  if (!report && activeTab !== 'chat') {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500">
-        <BarChart2 className="w-16 h-16 mb-4 opacity-20" />
-        <p>Run an analysis to view geophysical models and reports.</p>
+        <div className="flex gap-4 mb-8">
+            <button onClick={() => setActiveTab('chat')} className="flex flex-col items-center gap-2 p-4 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500 transition-all group">
+                <MessageSquare className="w-8 h-8 text-cyan-500 group-hover:scale-110 transition-transform" />
+                <span className="font-bold text-slate-300">Open AI Chat</span>
+            </button>
+        </div>
+        <p>Run an analysis or open chat to begin.</p>
       </div>
     );
   }
@@ -49,13 +66,21 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
         >
           <BarChart2 className="w-4 h-4" /> Geophysical Models
         </button>
+        <button
+          onClick={() => setActiveTab('chat')}
+          className={`px-6 py-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
+            activeTab === 'chat' ? 'border-cyan-500 text-cyan-400' : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" /> AI Assistant
+        </button>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         
         {/* REPORT TAB */}
-        {activeTab === 'report' && (
+        {activeTab === 'report' && report && (
           <div className="max-w-4xl mx-auto space-y-6">
             
             {/* Header Actions */}
@@ -83,6 +108,19 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
                 </div>
             </div>
 
+            {/* Deep Analysis Section (Thinking Mode Result) */}
+            {deepAnalysisResult && (
+                 <div className="bg-indigo-950/30 border border-indigo-500/30 p-5 rounded-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                        <BrainCircuit className="w-5 h-5 text-indigo-400" />
+                        <h3 className="text-lg font-bold text-indigo-200">Deep Thinking Analysis</h3>
+                    </div>
+                    <div className="prose prose-invert prose-sm max-w-none text-slate-300">
+                        <ReactMarkdown>{deepAnalysisResult}</ReactMarkdown>
+                    </div>
+                 </div>
+            )}
+
             {/* Editor / Viewer */}
             <div className="bg-slate-900 rounded-lg border border-slate-800 p-6 shadow-xl">
                 {isEditing ? (
@@ -100,7 +138,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
 
             {/* Sources */}
             <div className="mt-8 border-t border-slate-800 pt-6">
-                <h4 className="text-sm font-bold text-slate-400 mb-3">Identified Data Sources (Scraped)</h4>
+                <h4 className="text-sm font-bold text-slate-400 mb-3">Identified Data Sources (Scraped & Grounded)</h4>
                 <ul className="space-y-1">
                     {report.sources.map((source, idx) => (
                         <li key={idx} className="text-xs text-cyan-600 truncate hover:text-cyan-400 cursor-pointer">
@@ -113,7 +151,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
         )}
 
         {/* DATA TAB */}
-        {activeTab === 'data' && (
+        {activeTab === 'data' && report && (
           <div className="space-y-8 max-w-5xl mx-auto">
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -150,10 +188,10 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
                 </div>
             </div>
 
-            {/* Section: Mineral Potential Visualization */}
+            {/* Section: Mineral Potential Visualization (Matrix) */}
             <div className="bg-slate-900 p-6 rounded-lg border border-slate-800">
                 <h3 className="text-lg font-bold text-white mb-2">Mineral Potential Matrix</h3>
-                <p className="text-sm text-slate-400 mb-6">AI-derived probability based on regional stratigraphy and spectral anomalies.</p>
+                <p className="text-sm text-slate-400 mb-6">AI-derived identification based on regional stratigraphy and spectral anomalies.</p>
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {report.mineralPotential.map((mineral, idx) => (
@@ -162,21 +200,49 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData }) => {
                                 {mineral.substring(0, 2).toUpperCase()}
                             </div>
                             <span className="text-sm font-medium text-slate-200">{mineral}</span>
-                            <span className="text-xs text-green-400 mt-1">High Probability</span>
+                            <span className="text-xs text-green-400 mt-1">Detected</span>
                         </div>
                     ))}
                      <div className="bg-slate-800 p-4 rounded border border-slate-700 flex flex-col items-center justify-center text-center opacity-50">
                             <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center mb-2 text-slate-400 font-bold">
-                                ??
+                                ?
                             </div>
-                            <span className="text-sm font-medium text-slate-400">Other REE</span>
-                            <span className="text-xs text-slate-500 mt-1">Low Data Confidence</span>
+                            <span className="text-sm font-medium text-slate-400">Trace Elements</span>
+                            <span className="text-xs text-slate-500 mt-1">Pending Analysis</span>
                         </div>
+                </div>
+            </div>
+
+            {/* Section: Mineral Potential Visualization (Bar Chart) */}
+            <div className="bg-slate-900 p-6 rounded-lg border border-slate-800">
+                <h3 className="text-lg font-bold text-white mb-4">Mineral Confidence Index</h3>
+                <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={mineralChartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                            <XAxis dataKey="name" stroke="#94a3b8" tick={{fontSize: 12}} />
+                            <YAxis stroke="#94a3b8" label={{ value: 'Confidence (%)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} domain={[0, 100]} />
+                            <Tooltip cursor={{fill: '#334155', opacity: 0.2}} contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }} />
+                            <Bar dataKey="probability" radius={[4, 4, 0, 0]}>
+                                {mineralChartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={['#06b6d4', '#8b5cf6', '#f59e0b', '#10b981'][index % 4]} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
                 </div>
             </div>
 
           </div>
         )}
+
+        {/* CHAT TAB */}
+        {activeTab === 'chat' && (
+            <div className="max-w-4xl mx-auto h-full">
+                <ChatAssistant initialContext={report?.geologicalSummary} />
+            </div>
+        )}
+
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 
-import React, { useEffect } from 'react';
-import { MapContainer as LeafletMap, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline, CircleMarker } from 'react-leaflet';
+import React, { useEffect, useState } from 'react';
+import { MapContainer as LeafletMap, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline, CircleMarker, Polygon } from 'react-leaflet';
 import L from 'leaflet';
 import { Coordinates, MapLayer } from '../types';
 import { Eye, EyeOff } from 'lucide-react';
@@ -32,7 +32,17 @@ interface MapComponentProps {
   plottedPoints: Coordinates[];
   addPlottedPoint: (coord: Coordinates) => void;
   toggleLayer: (id: string) => void;
+  usePlottedArea: boolean;
 }
+
+const layerDescriptions: Record<string, string> = {
+  satellite: "Real-time optical imagery (Sentinel-2) for surface feature identification.",
+  magnetic: "Airborne magnetic anomalies indicating subsurface faults and ferrous bodies.",
+  radiometric: "Gamma-ray spectrometry (K, U, Th) revealing surface alteration zones.",
+  electromagnetic: "Conductivity variations useful for detecting massive sulfides and groundwater.",
+  geology: "Mapped lithological units and structural features from national surveys.",
+  gravity: "Bouguer density contrasts indicating deep crustal architecture."
+};
 
 function LocationMarker({ 
     setCoordinates, 
@@ -72,15 +82,17 @@ const MapComponent: React.FC<MapComponentProps> = ({
     isPlottingMode,
     plottedPoints,
     addPlottedPoint,
-    toggleLayer
+    toggleLayer,
+    usePlottedArea
 }) => {
+  const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
   
   return (
     <div className="h-full w-full relative z-0">
       <LeafletMap 
         center={[coordinates.lat, coordinates.lng]} 
         zoom={13} 
-        className="h-full w-full rounded-lg shadow-inner"
+        className={`h-full w-full rounded-lg shadow-inner ${isPlottingMode ? 'cursor-crosshair' : ''}`}
         zoomControl={false}
       >
         <TileLayer
@@ -155,11 +167,19 @@ const MapComponent: React.FC<MapComponentProps> = ({
                 pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1 }} 
              />
         ))}
+        
         {plottedPoints.length > 1 && (
-            <Polyline 
-                positions={plottedPoints.map(p => [p.lat, p.lng])} 
-                pathOptions={{ color: '#f59e0b', dashArray: '5, 10', weight: 2 }} 
-            />
+            usePlottedArea ? (
+                <Polygon
+                    positions={plottedPoints.map(p => [p.lat, p.lng])}
+                    pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.2, weight: 2 }}
+                />
+            ) : (
+                <Polyline 
+                    positions={plottedPoints.map(p => [p.lat, p.lng])} 
+                    pathOptions={{ color: '#f59e0b', dashArray: '5, 10', weight: 2 }} 
+                />
+            )
         )}
         
         <LocationMarker 
@@ -175,12 +195,14 @@ const MapComponent: React.FC<MapComponentProps> = ({
         <h4 className="font-bold mb-2 text-slate-300">Active Layers & Opacity</h4>
         <ul className="space-y-3">
           {layers.map(layer => (
-             <li key={layer.id} className="flex flex-col gap-1">
+             <li key={layer.id} className="flex flex-col gap-1 relative">
                <button 
                 onClick={() => toggleLayer(layer.id)}
-                className={`flex items-center gap-2 transition-all duration-300 w-full text-left hover:bg-slate-800/50 rounded p-1 ${layer.visible ? 'opacity-100' : 'opacity-40 grayscale'}`}
+                onMouseEnter={() => setHoveredLayerId(layer.id)}
+                onMouseLeave={() => setHoveredLayerId(null)}
+                className={`flex items-center gap-2 transition-all duration-300 w-full text-left hover:bg-slate-800/50 rounded p-1 ${layer.visible ? 'opacity-100' : 'opacity-50'}`}
                >
-                 <span className={`w-2 h-2 rounded-full transition-colors duration-300 shrink-0 ${layer.visible ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' : 'bg-slate-500'}`}></span>
+                 <span className={`w-2 h-2 rounded-full transition-colors duration-300 shrink-0 ${layer.visible ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' : 'bg-slate-600'}`}></span>
                  <span className={`font-medium transition-colors duration-300 flex-1 ${layer.visible ? 'text-cyan-100' : 'text-slate-500'}`}>{layer.name}</span>
                  {layer.visible ? (
                     <Eye className="w-3 h-3 text-cyan-400" />
@@ -189,6 +211,16 @@ const MapComponent: React.FC<MapComponentProps> = ({
                  )}
                </button>
                
+               {/* Tooltip */}
+               {hoveredLayerId === layer.id && (
+                   <div className="absolute left-full top-0 ml-3 w-52 bg-slate-900/95 text-[10px] text-slate-300 p-2.5 rounded border border-slate-600 shadow-xl z-[1002] pointer-events-none backdrop-blur-sm animate-in fade-in slide-in-from-left-2 duration-200">
+                       <div className="font-bold text-cyan-500 mb-1 capitalize">{layer.type} Data</div>
+                       {layerDescriptions[layer.type] ?? "Geophysical visualization layer."}
+                       {/* Arrow indicator */}
+                       <div className="absolute top-3 -left-1.5 w-3 h-3 bg-slate-900 border-l border-b border-slate-600 transform rotate-45"></div>
+                   </div>
+               )}
+
                {layer.visible && (
                    <div className="flex items-center gap-2 pl-4 animate-in slide-in-from-top-1 fade-in duration-300">
                        <input 

@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import MapComponent from './components/MapContainer';
 import Dashboard from './components/Dashboard';
-import { Coordinates, AnalysisStatus, MiningReport, MapLayer } from './types';
-import { analyzeGeology, generateChartData } from './services/geminiService';
+import { Coordinates, AnalysisStatus, MiningReport, MapLayer, NearbyPlace } from './types';
+import { analyzeGeology, generateChartData, quickGeologyScan, performDeepThinkingAnalysis, findNearbyMines } from './services/geminiService';
 
 // Default Coordinates: Pilanesberg Alkaline Ring Complex, South Africa (Geologically interesting)
 const DEFAULT_COORDS: Coordinates = { lat: -25.2, lng: 27.08 };
@@ -14,10 +14,14 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [report, setReport] = useState<MiningReport | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
+  const [deepAnalysisResult, setDeepAnalysisResult] = useState<string | null>(null);
+  const [quickScanResult, setQuickScanResult] = useState<string>("");
+  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyPlace[]>([]);
   
   // Plotting Mode State
   const [isPlottingMode, setIsPlottingMode] = useState(false);
   const [plottedPoints, setPlottedPoints] = useState<Coordinates[]>([]);
+  const [usePlottedArea, setUsePlottedArea] = useState(false);
 
   const [layers, setLayers] = useState<MapLayer[]>([
     { id: 'satellite', name: 'Satellite Imagery (Sentinel-2)', visible: true, opacity: 1.0, type: 'satellite' },
@@ -46,12 +50,50 @@ const App: React.FC = () => {
 
   const clearPlottedPoints = () => {
     setPlottedPoints([]);
+    setUsePlottedArea(false);
   };
 
-  const handleAnalysis = async (locationName: string) => {
+  // Helper to get effective coordinates
+  const getTargetCoords = () => {
+    if (usePlottedArea && plottedPoints.length >= 3) {
+        const latSum = plottedPoints.reduce((sum, p) => sum + p.lat, 0);
+        const lngSum = plottedPoints.reduce((sum, p) => sum + p.lng, 0);
+        return {
+            lat: latSum / plottedPoints.length,
+            lng: lngSum / plottedPoints.length
+        };
+    }
+    return coordinates;
+  };
+
+  const handleQuickScan = async () => {
+    const target = getTargetCoords();
+    setQuickScanResult("Scanning area with Gemini Flash-Lite...");
+    const res = await quickGeologyScan(target);
+    setQuickScanResult(res);
+  };
+
+  const handleAnalysis = async (locationName: string, useDeepThinking: boolean) => {
     setStatus(AnalysisStatus.UPLOADING);
     setReport(null);
+    setDeepAnalysisResult(null);
+    setQuickScanResult("");
+    setNearbyPlaces([]);
     
+    // Determine Target Coordinates (Point or Centroid of Polygon)
+    let targetCoords = getTargetCoords();
+    let polygon: Coordinates[] | undefined = undefined;
+
+    if (usePlottedArea && plottedPoints.length >= 3) {
+        polygon = plottedPoints;
+    }
+
+    // Fire Low Latency Request immediately (Flash Lite) - Auto scan on analysis as well
+    quickGeologyScan(targetCoords).then(res => setQuickScanResult(res));
+    
+    // Fire Maps Grounding
+    findNearbyMines(targetCoords).then(places => setNearbyPlaces(places));
+
     try {
         // 1. Simulate Data Fetching
         setTimeout(() => setStatus(AnalysisStatus.FETCHING_SATELLITE), 1000);
@@ -67,12 +109,18 @@ const App: React.FC = () => {
              setStatus(AnalysisStatus.ANALYZING_AI);
              try {
                  const [result, data] = await Promise.all([
-                     analyzeGeology(coordinates, locationName),
-                     generateChartData(coordinates)
+                     analyzeGeology(targetCoords, locationName, polygon),
+                     generateChartData(targetCoords)
                  ]);
                  
                  setReport(result);
                  setChartData(data);
+
+                 if (useDeepThinking) {
+                     const deepRes = await performDeepThinkingAnalysis(targetCoords, locationName);
+                     setDeepAnalysisResult(deepRes);
+                 }
+
                  setStatus(AnalysisStatus.COMPLETE);
              } catch (e) {
                  console.error(e);
@@ -91,6 +139,7 @@ const App: React.FC = () => {
       <Sidebar 
         status={status}
         onAnalyze={handleAnalysis}
+        onQuickScan={handleQuickScan}
         coordinates={coordinates}
         setCoordinates={setCoordinates}
         layers={layers}
@@ -99,6 +148,10 @@ const App: React.FC = () => {
         togglePlottingMode={togglePlottingMode}
         plottedPoints={plottedPoints}
         clearPlottedPoints={clearPlottedPoints}
+        quickScanResult={quickScanResult}
+        nearbyPlaces={nearbyPlaces}
+        usePlottedArea={usePlottedArea}
+        setUsePlottedArea={setUsePlottedArea}
       />
       
       <main className="flex-1 flex flex-col relative">
@@ -113,6 +166,7 @@ const App: React.FC = () => {
               plottedPoints={plottedPoints}
               addPlottedPoint={addPlottedPoint}
               toggleLayer={toggleLayer}
+              usePlottedArea={usePlottedArea}
            />
            <div className="absolute top-4 right-4 bg-slate-900/80 p-2 rounded text-[10px] text-slate-400 z-[500] pointer-events-none">
               Live Satellite Feed (Simulated) <br />
@@ -128,7 +182,11 @@ const App: React.FC = () => {
 
         {/* Dashboard / Report Area */}
         <div className="h-[55%] relative z-10 bg-slate-950">
-            <Dashboard report={report} chartData={chartData} />
+            <Dashboard 
+                report={report} 
+                chartData={chartData} 
+                deepAnalysisResult={deepAnalysisResult}
+            />
         </div>
       </main>
     </div>

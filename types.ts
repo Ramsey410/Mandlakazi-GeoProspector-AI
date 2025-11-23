@@ -31,6 +31,7 @@ export interface MiningReport {
   riskAssessment: string;
   sources: string[];
   rawMarkdown: string;
+  isDeepAnalysis?: boolean;
 }
 
 export interface MapLayer {
@@ -39,4 +40,18 @@ export interface MapLayer {
   visible: boolean;
   opacity: number;
   type: 'satellite' | 'magnetic' | 'gravity' | 'geology' | 'radiometric' | 'electromagnetic';
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'model';
+  text: string;
+  timestamp: number;
+  image?: string; // base64
+  isThinking?: boolean;
+}
+
+export interface NearbyPlace {
+  title: string;
+  uri?: string;
 }
