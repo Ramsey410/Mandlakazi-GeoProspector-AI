@@ -1,9 +1,9 @@
 
-import React, { useEffect, useState } from 'react';
-import { MapContainer as LeafletMap, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline, CircleMarker, Polygon } from 'react-leaflet';
+import React, { useEffect, useState, useMemo } from 'react';
+import { MapContainer as LeafletMap, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline, CircleMarker, Polygon, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import { Coordinates, MapLayer } from '../types';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Activity } from 'lucide-react';
 
 // Fix Leaflet icon issue in React without bundler support for image imports
 const iconUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png';
@@ -28,6 +28,7 @@ interface MapComponentProps {
   setCoordinates: (coords: Coordinates) => void;
   layers: MapLayer[];
   updateLayerOpacity: (id: string, opacity: number) => void;
+  toggleLayerOption: (id: string, optionKey: keyof MapLayer) => void;
   isPlottingMode: boolean;
   plottedPoints: Coordinates[];
   addPlottedPoint: (coord: Coordinates) => void;
@@ -41,7 +42,8 @@ const layerDescriptions: Record<string, string> = {
   radiometric: "Gamma-ray spectrometry (K, U, Th) revealing surface alteration zones.",
   electromagnetic: "Conductivity variations useful for detecting massive sulfides and groundwater.",
   geology: "Mapped lithological units and structural features from national surveys.",
-  gravity: "Bouguer density contrasts indicating deep crustal architecture."
+  gravity: "Bouguer density contrasts indicating deep crustal architecture.",
+  terrain: "Global hillshade derived from SRTM/DEM data to highlight topography."
 };
 
 function LocationMarker({ 
@@ -74,11 +76,58 @@ function MapUpdater({ center }: { center: Coordinates }) {
   return null;
 }
 
+// Simulates generating contours based on gravity data
+function GravityContours({ center }: { center: Coordinates }) {
+  const features = useMemo(() => {
+    const featureList = [];
+    // Generate 6 concentric, slightly irregular rings to simulate gravity anomaly contours
+    for (let i = 1; i <= 6; i++) {
+        const radius = 0.008 * i; 
+        const points = [];
+        for (let angle = 0; angle <= 360; angle += 10) {
+            const rad = angle * (Math.PI / 180);
+            // Add some "noise" to the radius to make it look organic/geological
+            const noise = 0.001 * Math.sin(rad * 3 + i) * Math.cos(rad * 2);
+            const r = radius + noise;
+            const lat = center.lat + r * Math.cos(rad);
+            const lng = center.lng + r * Math.sin(rad);
+            points.push([lng, lat]); // GeoJSON uses [lng, lat]
+        }
+        featureList.push({
+            type: "Feature",
+            properties: { level: i * 10 },
+            geometry: {
+                type: "LineString",
+                coordinates: points
+            }
+        });
+    }
+    return {
+        type: "FeatureCollection",
+        features: featureList
+    };
+  }, [center]);
+
+  return (
+    <GeoJSON 
+        key={JSON.stringify(center)} // Force re-render when center changes
+        data={features as any} 
+        style={{
+            color: '#f97316', // Orange-500
+            weight: 2,
+            opacity: 0.8,
+            dashArray: '5, 5'
+        }} 
+    />
+  );
+}
+
 const MapComponent: React.FC<MapComponentProps> = ({ 
     coordinates, 
     setCoordinates, 
     layers, 
     updateLayerOpacity,
+    toggleLayerOption,
     isPlottingMode,
     plottedPoints,
     addPlottedPoint,
@@ -109,6 +158,15 @@ const MapComponent: React.FC<MapComponentProps> = ({
            />
         )}
 
+        {/* Terrain Hillshade - Added as an overlay with multiply effect */}
+        {layers.find(l => l.id === 'terrain' && l.visible) && (
+            <TileLayer
+                opacity={layers.find(l => l.id === 'terrain')?.opacity ?? 0.5}
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"
+                className="mix-blend-multiply contrast-125"
+            />
+        )}
+
         {/* Simulated Magnetic Layer Overlay */}
         {layers.find(l => l.id === 'magnetic' && l.visible) && (
             <TileLayer 
@@ -135,13 +193,18 @@ const MapComponent: React.FC<MapComponentProps> = ({
             />
         )}
 
-        {/* Simulated Gravity/Geology Overlays - In a real app these would be WMS layers from USGS/Geoscience servers */}
+        {/* Simulated Gravity/Geology Overlays */}
         {layers.find(l => l.id === 'gravity' && l.visible) && (
-             <TileLayer 
-                opacity={layers.find(l => l.id === 'gravity')?.opacity ?? 0.3}
-                url="https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png"
-                className="invert filter contrast-150"
-             />
+             <>
+                 <TileLayer 
+                    opacity={layers.find(l => l.id === 'gravity')?.opacity ?? 0.3}
+                    url="https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png"
+                    className="invert filter contrast-150"
+                 />
+                 {layers.find(l => l.id === 'gravity')?.showContours && (
+                     <GravityContours center={coordinates} />
+                 )}
+             </>
         )}
         
         {layers.find(l => l.id === 'geology' && l.visible) && (
@@ -222,19 +285,37 @@ const MapComponent: React.FC<MapComponentProps> = ({
                )}
 
                {layer.visible && (
-                   <div className="flex items-center gap-2 pl-4 animate-in slide-in-from-top-1 fade-in duration-300">
-                       <input 
-                           type="range" 
-                           min="0" 
-                           max="1" 
-                           step="0.05" 
-                           value={layer.opacity}
-                           onChange={(e) => updateLayerOpacity(layer.id, parseFloat(e.target.value))}
-                           className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500 hover:accent-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                       />
-                       <span className="text-[10px] text-slate-400 w-8 text-right font-mono">
-                           {(layer.opacity * 100).toFixed(0)}%
-                       </span>
+                   <div className="flex flex-col gap-2 pl-4 animate-in slide-in-from-top-1 fade-in duration-300">
+                       <div className="flex items-center gap-2">
+                           <input 
+                               type="range" 
+                               min="0" 
+                               max="1" 
+                               step="0.05" 
+                               value={layer.opacity}
+                               onChange={(e) => updateLayerOpacity(layer.id, parseFloat(e.target.value))}
+                               className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500 hover:accent-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                           />
+                           <span className="text-[10px] text-slate-400 w-8 text-right font-mono">
+                               {(layer.opacity * 100).toFixed(0)}%
+                           </span>
+                       </div>
+                       
+                       {/* Option: Contours for Gravity Layer */}
+                       {layer.id === 'gravity' && (
+                           <div className="flex items-center gap-2 mt-1">
+                               <input 
+                                   type="checkbox" 
+                                   id={`contours-${layer.id}`}
+                                   checked={layer.showContours || false}
+                                   onChange={() => toggleLayerOption(layer.id, 'showContours')}
+                                   className="w-3 h-3 rounded bg-slate-700 border-slate-600 text-cyan-600 focus:ring-0 focus:ring-offset-0"
+                               />
+                               <label htmlFor={`contours-${layer.id}`} className="text-[10px] text-slate-400 cursor-pointer hover:text-cyan-300 flex items-center gap-1">
+                                    <Activity className="w-3 h-3" /> Overlay Anomaly Contours
+                               </label>
+                           </div>
+                       )}
                    </div>
                )}
              </li>

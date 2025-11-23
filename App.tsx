@@ -25,11 +25,12 @@ const App: React.FC = () => {
 
   const [layers, setLayers] = useState<MapLayer[]>([
     { id: 'satellite', name: 'Satellite Imagery (Sentinel-2)', visible: true, opacity: 1.0, type: 'satellite' },
+    { id: 'terrain', name: 'Terrain Hillshade', visible: true, opacity: 0.5, type: 'terrain' },
     { id: 'magnetic', name: 'Airborne Magnetics', visible: false, opacity: 0.5, type: 'magnetic' },
     { id: 'radiometric', name: 'Radiometrics (K-U-Th)', visible: false, opacity: 0.6, type: 'radiometric' },
     { id: 'electromagnetic', name: 'Electromagnetics (AEM)', visible: false, opacity: 0.4, type: 'electromagnetic' },
     { id: 'geology', name: 'Surface Geology', visible: true, opacity: 0.4, type: 'geology' },
-    { id: 'gravity', name: 'Bouguer Gravity', visible: false, opacity: 0.3, type: 'gravity' },
+    { id: 'gravity', name: 'Bouguer Gravity', visible: false, opacity: 0.3, type: 'gravity', showContours: false },
   ]);
 
   const toggleLayer = (id: string) => {
@@ -38,6 +39,15 @@ const App: React.FC = () => {
 
   const updateLayerOpacity = (id: string, opacity: number) => {
     setLayers(prev => prev.map(l => l.id === id ? { ...l, opacity } : l));
+  };
+  
+  const toggleLayerOption = (id: string, optionKey: keyof MapLayer) => {
+      setLayers(prev => prev.map(l => {
+          if (l.id === id) {
+              return { ...l, [optionKey]: !l[optionKey] };
+          }
+          return l;
+      }));
   };
 
   const togglePlottingMode = () => {
@@ -162,6 +172,7 @@ const App: React.FC = () => {
               setCoordinates={setCoordinates}
               layers={layers}
               updateLayerOpacity={updateLayerOpacity}
+              toggleLayerOption={toggleLayerOption}
               isPlottingMode={isPlottingMode}
               plottedPoints={plottedPoints}
               addPlottedPoint={addPlottedPoint}

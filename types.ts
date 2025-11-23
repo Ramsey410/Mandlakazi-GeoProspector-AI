@@ -39,7 +39,8 @@ export interface MapLayer {
   name: string;
   visible: boolean;
   opacity: number;
-  type: 'satellite' | 'magnetic' | 'gravity' | 'geology' | 'radiometric' | 'electromagnetic';
+  type: 'satellite' | 'magnetic' | 'gravity' | 'geology' | 'radiometric' | 'electromagnetic' | 'terrain';
+  showContours?: boolean;
 }
 
 export interface ChatMessage {
