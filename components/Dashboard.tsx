@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, BarChart, Bar, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, AreaChart, Area, BarChart, Bar, Cell, ReferenceLine } from 'recharts';
 import { FileText, Edit3, Download, BarChart2, AlertTriangle, MessageSquare, BrainCircuit } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
 import { MiningReport, GeoDataPoint } from '../types';
 import ChatAssistant from './ChatAssistant';
 
@@ -11,6 +10,61 @@ interface DashboardProps {
   chartData: GeoDataPoint[];
   deepAnalysisResult: string | null;
 }
+
+// Security: Simple, safe markdown renderer to avoid external dependencies and XSS
+const SafeMarkdown = ({ content }: { content: string }) => {
+  const lines = content.split('\n');
+  return (
+    <div className="space-y-2">
+      {lines.map((line, i) => {
+        // Headers
+        if (line.startsWith('### ')) return <h3 key={i} className="text-lg font-bold text-cyan-200 mt-4">{line.replace('### ', '')}</h3>;
+        if (line.startsWith('## ')) return <h2 key={i} className="text-xl font-bold text-cyan-300 mt-6 border-b border-slate-700 pb-2">{line.replace('## ', '')}</h2>;
+        if (line.startsWith('# ')) return <h1 key={i} className="text-2xl font-bold text-white mt-6">{line.replace('# ', '')}</h1>;
+        
+        // Lists
+        if (line.trim().startsWith('- ')) return <li key={i} className="ml-4 text-slate-300 list-disc">{line.replace('- ', '')}</li>;
+        if (line.trim().match(/^\d+\. /)) return <li key={i} className="ml-4 text-slate-300 list-decimal">{line.replace(/^\d+\. /, '')}</li>;
+        
+        // Empty lines
+        if (!line.trim()) return <div key={i} className="h-2"></div>;
+        
+        // Bold formatting (Simple regex replace for visual only)
+        const parts = line.split(/(\*\*.*?\*\*)/g);
+        return (
+          <p key={i} className="text-slate-300 leading-relaxed">
+            {parts.map((part, j) => 
+               part.startsWith('**') && part.endsWith('**') 
+               ? <strong key={j} className="text-white">{part.slice(2, -2)}</strong> 
+               : part
+            )}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
+// Map common minerals to specific colors for better visualization
+const MINERAL_COLORS: Record<string, string> = {
+    'Gold': '#fbbf24',    // Amber
+    'Copper': '#f97316',  // Orange
+    'Iron': '#ef4444',    // Red
+    'Silver': '#e2e8f0',  // Slate-200
+    'Platinum': '#94a3b8',// Slate-400
+    'Coal': '#475569',    // Slate-600
+    'Diamond': '#22d3ee', // Cyan
+    'Lithium': '#d8b4fe', // Purple
+    'Uranium': '#bef264', // Lime
+    'Nickel': '#14b8a6',  // Teal
+    'Cobalt': '#3b82f6',  // Blue
+};
+
+const getMineralColor = (name: string) => {
+    const normalized = name.toLowerCase();
+    const key = Object.keys(MINERAL_COLORS).find(k => normalized.includes(k.toLowerCase()));
+    return key ? MINERAL_COLORS[key] : '#06b6d4'; // Default Cyan
+};
 
 const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisResult }) => {
   const [activeTab, setActiveTab] = useState<'report' | 'data' | 'chat'>('report');
@@ -34,7 +88,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisRe
 
   if (!report && activeTab !== 'chat') {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500">
+      <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-500 h-full">
         <div className="flex gap-4 mb-8">
             <button onClick={() => setActiveTab('chat')} className="flex flex-col items-center gap-2 p-4 rounded-lg bg-slate-900 border border-slate-800 hover:border-cyan-500 transition-all group">
                 <MessageSquare className="w-8 h-8 text-cyan-500 group-hover:scale-110 transition-transform" />
@@ -49,7 +103,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisRe
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-950">
       {/* Tabs */}
-      <div className="flex border-b border-slate-800 bg-slate-900">
+      <div className="flex border-b border-slate-800 bg-slate-900 shrink-0">
         <button
           onClick={() => setActiveTab('report')}
           className={`px-6 py-3 text-sm font-medium flex items-center gap-2 border-b-2 transition-colors ${
@@ -77,7 +131,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisRe
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
         
         {/* REPORT TAB */}
         {activeTab === 'report' && report && (
@@ -116,7 +170,7 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisRe
                         <h3 className="text-lg font-bold text-indigo-200">Deep Thinking Analysis</h3>
                     </div>
                     <div className="prose prose-invert prose-sm max-w-none text-slate-300">
-                        <ReactMarkdown>{deepAnalysisResult}</ReactMarkdown>
+                        <SafeMarkdown content={deepAnalysisResult} />
                     </div>
                  </div>
             )}
@@ -130,8 +184,8 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisRe
                         onChange={(e) => setEditableReport(e.target.value)}
                     />
                 ) : (
-                    <div className="prose prose-invert max-w-none prose-headings:text-cyan-100 prose-a:text-cyan-400 prose-strong:text-white">
-                        <ReactMarkdown>{editableReport}</ReactMarkdown>
+                    <div className="prose prose-invert max-w-none">
+                        <SafeMarkdown content={editableReport} />
                     </div>
                 )}
             </div>
@@ -194,21 +248,29 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisRe
                 <p className="text-sm text-slate-400 mb-6">AI-derived identification based on regional stratigraphy and spectral anomalies.</p>
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {report.mineralPotential.map((mineral, idx) => (
-                        <div key={idx} className="bg-slate-800 p-4 rounded border border-slate-700 flex flex-col items-center justify-center text-center">
-                            <div className="w-12 h-12 rounded-full bg-cyan-900/50 flex items-center justify-center mb-2 text-cyan-400 font-bold border border-cyan-800">
-                                {mineral.substring(0, 2).toUpperCase()}
+                    {report.mineralPotential.map((mineral, idx) => {
+                        const color = getMineralColor(mineral);
+                        return (
+                            <div key={idx} className="bg-slate-800 p-4 rounded border border-slate-700 flex flex-col items-center justify-center text-center group hover:bg-slate-750 transition-colors">
+                                <div 
+                                    className="w-12 h-12 rounded-full flex items-center justify-center mb-2 font-bold border-2 transition-transform group-hover:scale-110"
+                                    style={{ backgroundColor: `${color}20`, borderColor: color, color: color }}
+                                >
+                                    {mineral.substring(0, 2).toUpperCase()}
+                                </div>
+                                <span className="text-sm font-medium text-slate-200">{mineral}</span>
+                                <span className="text-[10px] mt-1 px-2 py-0.5 rounded-full bg-slate-900 text-slate-400">
+                                    Primary Target
+                                </span>
                             </div>
-                            <span className="text-sm font-medium text-slate-200">{mineral}</span>
-                            <span className="text-xs text-green-400 mt-1">Detected</span>
-                        </div>
-                    ))}
-                     <div className="bg-slate-800 p-4 rounded border border-slate-700 flex flex-col items-center justify-center text-center opacity-50">
+                        );
+                    })}
+                     <div className="bg-slate-800 p-4 rounded border border-slate-700 flex flex-col items-center justify-center text-center opacity-50 border-dashed">
                             <div className="w-12 h-12 rounded-full bg-slate-700 flex items-center justify-center mb-2 text-slate-400 font-bold">
                                 ?
                             </div>
                             <span className="text-sm font-medium text-slate-400">Trace Elements</span>
-                            <span className="text-xs text-slate-500 mt-1">Pending Analysis</span>
+                            <span className="text-xs text-slate-500 mt-1">Pending Lab Assay</span>
                         </div>
                 </div>
             </div>
@@ -219,13 +281,17 @@ const Dashboard: React.FC<DashboardProps> = ({ report, chartData, deepAnalysisRe
                 <div className="h-64">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={mineralChartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                            <XAxis dataKey="name" stroke="#94a3b8" tick={{fontSize: 12}} />
-                            <YAxis stroke="#94a3b8" label={{ value: 'Confidence (%)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} domain={[0, 100]} />
-                            <Tooltip cursor={{fill: '#334155', opacity: 0.2}} contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }} />
-                            <Bar dataKey="probability" radius={[4, 4, 0, 0]}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                            <XAxis dataKey="name" stroke="#94a3b8" tick={{fontSize: 12}} axisLine={false} tickLine={false} />
+                            <YAxis stroke="#94a3b8" label={{ value: 'Confidence (%)', angle: -90, position: 'insideLeft', fill: '#94a3b8' }} domain={[0, 100]} axisLine={false} tickLine={false} />
+                            <Tooltip 
+                                cursor={{fill: '#334155', opacity: 0.2}} 
+                                contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f1f5f9', borderRadius: '0.5rem' }} 
+                            />
+                            <ReferenceLine y={80} stroke="#22c55e" strokeDasharray="3 3" label={{ value: 'High Probability', fill: '#22c55e', fontSize: 10, position: 'insideTopRight' }} />
+                            <Bar dataKey="probability" radius={[4, 4, 0, 0]} animationDuration={1500}>
                                 {mineralChartData.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={['#06b6d4', '#8b5cf6', '#f59e0b', '#10b981'][index % 4]} />
+                                    <Cell key={`cell-${index}`} fill={getMineralColor(entry.name)} />
                                 ))}
                             </Bar>
                         </BarChart>

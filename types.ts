@@ -56,3 +56,9 @@ export interface NearbyPlace {
   title: string;
   uri?: string;
 }
+
+export interface User {
+  email: string;
+  name: string;
+  avatar?: string;
+}

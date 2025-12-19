@@ -1,13 +1,25 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Loader2, Bot, User } from 'lucide-react';
+import { Send, Image as ImageIcon, Loader2, Bot, User, AlertCircle } from 'lucide-react';
 import { ChatMessage } from '../types';
-import ReactMarkdown from 'react-markdown';
 import { sendChatMessage } from '../services/geminiService';
 
 interface ChatAssistantProps {
   initialContext?: string;
 }
+
+// Security: Simple, safe markdown renderer
+const SafeMarkdown = ({ content }: { content: string }) => {
+    return (
+        <div className="whitespace-pre-wrap">
+            {content.split(/(\*\*.*?\*\*)/g).map((part, i) => 
+                part.startsWith('**') && part.endsWith('**') 
+                ? <strong key={i}>{part.slice(2, -2)}</strong> 
+                : part
+            )}
+        </div>
+    );
+};
 
 const ChatAssistant: React.FC<ChatAssistantProps> = ({ initialContext }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -21,6 +33,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ initialContext }) => {
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,6 +43,17 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ initialContext }) => {
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Security: Validate Image
+      if (!file.type.startsWith('image/')) {
+          setUploadError("Invalid file type. Please upload an image.");
+          return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+          setUploadError("Image size exceeds 5MB.");
+          return;
+      }
+
+      setUploadError(null);
       const reader = new FileReader();
       reader.onloadend = () => {
         setSelectedImage(reader.result as string);
@@ -52,18 +76,14 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ initialContext }) => {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setSelectedImage(null);
+    setUploadError(null);
     setIsTyping(true);
 
     try {
-      // Prepare history for context
-      // We strip images from history for simplicity in this demo, or keep them if needed
       const historyForApi = messages.map(m => ({
         role: m.role,
         text: m.text
       }));
-
-      // If there's initial context (like current report), append it implicitly to the first system/user prompt logic
-      // For now, we just rely on the chat flow.
 
       const imageBase64 = userMsg.image ? userMsg.image.split(',')[1] : undefined;
       const responseText = await sendChatMessage(historyForApi, userMsg.text, imageBase64);
@@ -99,7 +119,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ initialContext }) => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 scroll-smooth">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-slate-700' : 'bg-cyan-900/50 border border-cyan-800'}`}>
@@ -111,7 +131,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ initialContext }) => {
                     <img src={msg.image} alt="Upload" className="max-w-full h-40 object-cover rounded border border-slate-700" />
                 )}
                 <div className={`p-3 rounded-lg text-sm ${msg.role === 'user' ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-300 border border-slate-700'}`}>
-                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    <SafeMarkdown content={msg.text} />
                 </div>
                 <span className="text-[10px] text-slate-600 block px-1">
                     {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
@@ -142,6 +162,12 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ initialContext }) => {
             <div className="mb-2 flex items-center gap-2 bg-slate-900 p-2 rounded border border-slate-700 w-fit">
                 <span className="text-xs text-cyan-400">Image attached</span>
                 <button onClick={() => setSelectedImage(null)} className="text-slate-500 hover:text-white">&times;</button>
+            </div>
+        )}
+        {uploadError && (
+             <div className="mb-2 flex items-center gap-2 bg-red-900/20 p-2 rounded border border-red-900/50 w-fit">
+                <AlertCircle className="w-3 h-3 text-red-500" />
+                <span className="text-xs text-red-400">{uploadError}</span>
             </div>
         )}
         <div className="flex gap-2">

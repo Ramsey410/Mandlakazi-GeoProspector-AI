@@ -2,8 +2,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Coordinates, MiningReport, NearbyPlace } from '../types';
 
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+// ALWAYS use a named parameter and process.env.API_KEY directly.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // --- 1. SEARCH GROUNDING (Existing upgraded) ---
 export const analyzeGeology = async (coords: Coordinates, locationName: string, areaPolygon?: Coordinates[]): Promise<MiningReport> => {
@@ -43,14 +43,16 @@ export const analyzeGeology = async (coords: Coordinates, locationName: string, 
   `;
 
   try {
+    // For Complex Text Tasks with Search Grounding: 'gemini-3-pro-preview'
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
       }
     });
 
+    // Access text property directly (it is a property, not a method).
     let jsonStr = response.text || "{}";
     jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?/g, '');
     
@@ -109,8 +111,7 @@ export const performDeepThinkingAnalysis = async (coords: Coordinates, locationN
       model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 32768 }, // Max thinking budget
-        // Do not set maxOutputTokens when using thinkingConfig
+        thinkingConfig: { thinkingBudget: 32768 }, // max budget for gemini-3-pro-preview
       }
     });
     return response.text || "Analysis failed.";
@@ -124,7 +125,7 @@ export const performDeepThinkingAnalysis = async (coords: Coordinates, locationN
 export const quickGeologyScan = async (coords: Coordinates): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-lite', // Low latency model
+      model: 'gemini-flash-lite-latest', // Correct model alias for gemini lite or flash lite
       contents: `Provide a 1-sentence quick geological summary of the area at coordinates ${coords.lat}, ${coords.lng}. Fast response needed.`,
     });
     return response.text || "No data.";
@@ -137,6 +138,7 @@ export const quickGeologyScan = async (coords: Coordinates): Promise<string> => 
 // --- 4. MAPS GROUNDING ---
 export const findNearbyMines = async (coords: Coordinates): Promise<NearbyPlace[]> => {
   try {
+    // Maps grounding is only supported in Gemini 2.5 series models.
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: `List active mining operations or significant geological sites near latitude ${coords.lat}, longitude ${coords.lng}.`,
@@ -152,16 +154,7 @@ export const findNearbyMines = async (coords: Coordinates): Promise<NearbyPlace[
 
     // Extract grounding chunks for Maps
     const places: NearbyPlace[] = [];
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     
-    // Attempt to parse text if structured, otherwise rely on grounding chunks
-    // For simple display, we extract the map links/titles provided by the tool
-    // Note: The structure of groundingChunks for maps varies, we simulate extraction here based on documentation
-    
-    // If the text contains a list, we just return the raw text as a 'place' for now or parse it
-    // But better to use the grounding metadata if available.
-    
-    // Fallback: Parse the text for list items if grounding chunks aren't explicit enough
     const lines = (response.text || "").split('\n').filter(l => l.includes('- ') || l.match(/^\d\./));
     lines.forEach(line => {
         places.push({ title: line.replace(/[-*]\s/, '').trim() });
@@ -177,33 +170,31 @@ export const findNearbyMines = async (coords: Coordinates): Promise<NearbyPlace[
 // --- 5. CHATBOT & VISION ---
 export const sendChatMessage = async (history: any[], newMessage: string, imageBase64?: string): Promise<string> => {
   try {
-    let userContent: any = { role: 'user', parts: [] };
+    let parts: any[] = [];
     
     if (imageBase64) {
-        userContent.parts.push({
+        parts.push({
             inlineData: {
                 mimeType: "image/jpeg",
                 data: imageBase64
             }
         });
-        userContent.parts.push({ text: "Analyze this image: " + newMessage });
+        parts.push({ text: "Analyze this image: " + newMessage });
     } else {
-        userContent.parts.push({ text: newMessage });
+        parts.push({ text: newMessage });
     }
 
-    // Convert simple history to API format if needed, or maintain session.
-    // For stateless simple calls (or we could use chats.create):
-    
     const chat = ai.chats.create({
-        model: 'gemini-3-pro-preview', // Capable of vision and complex reasoning
+        model: 'gemini-3-pro-preview', // Capable of complex reasoning
         history: history.map(h => ({
             role: h.role,
             parts: [{ text: h.text }] 
         }))
     });
 
+    // chat.sendMessage only accepts the message parameter.
     const result = await chat.sendMessage({
-        parts: userContent.parts
+        message: { parts: parts }
     });
 
     return result.text || "I couldn't generate a response.";
@@ -227,10 +218,23 @@ export const generateChartData = async (coords: Coordinates): Promise<any[]> => 
 
     try {
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: prompt,
             config: {
-                responseMimeType: "application/json"
+                responseMimeType: "application/json",
+                // Use responseSchema for expected output.
+                responseSchema: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      depth: { type: Type.NUMBER },
+                      resistivity: { type: Type.NUMBER },
+                      magneticSusceptibility: { type: Type.NUMBER }
+                    },
+                    required: ["depth", "resistivity", "magneticSusceptibility"]
+                  }
+                }
             }
         });
         if(response.text) return JSON.parse(response.text);

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Map, FileText, Activity, Layers, Upload, Search, Globe, MapPin, Trash2, Zap, BrainCircuit, CheckSquare, Square, MousePointerClick } from 'lucide-react';
+import { Map, FileText, Activity, Layers, Upload, Search, Globe, MapPin, Trash2, Zap, BrainCircuit, CheckSquare, Square, MousePointerClick, ShieldCheck } from 'lucide-react';
 import { Coordinates, AnalysisStatus, MapLayer, NearbyPlace } from '../types';
 
 interface SidebarProps {
@@ -19,6 +19,7 @@ interface SidebarProps {
   nearbyPlaces: NearbyPlace[];
   usePlottedArea: boolean;
   setUsePlottedArea: (use: boolean) => void;
+  importPlottedPoints: (points: Coordinates[]) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -36,10 +37,12 @@ const Sidebar: React.FC<SidebarProps> = ({
     quickScanResult,
     nearbyPlaces,
     usePlottedArea,
-    setUsePlottedArea
+    setUsePlottedArea,
+    importPlottedPoints
 }) => {
   const [locationInput, setLocationInput] = useState('');
   const [useDeepThinking, setUseDeepThinking] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleSearch = () => {
     if (locationInput) {
@@ -50,24 +53,117 @@ const Sidebar: React.FC<SidebarProps> = ({
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      // Simulation of CSV upload parsing
-      if(e.target.files && e.target.files[0]) {
-          alert("CSV Uploaded. extracting coordinates...");
-          setCoordinates({ lat: -25.7479, lng: 28.2293 }); // Pretoria example
+  const validateFile = (file: File): boolean => {
+      // Security: Limit file size to 5MB
+      if (file.size > 5 * 1024 * 1024) {
+          setUploadError("File exceeds 5MB limit.");
+          return false;
       }
+      // Security: Check extension
+      if (!file.name.toLowerCase().endsWith('.csv')) {
+          setUploadError("Only .csv files are supported.");
+          return false;
+      }
+      setUploadError(null);
+      return true;
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (!validateFile(file)) {
+          // Reset even if invalid to allow re-selection
+          e.target.value = '';
+          return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const text = event.target?.result as string;
+          try {
+              const points = parseCSV(text);
+              
+              if (points.length > 0) {
+                  importPlottedPoints(points);
+                  setUploadError(null);
+                  // Optional: alert user or just show points
+              } else {
+                  setUploadError("No valid coordinates (lat/lng) found.");
+              }
+          } catch (err) {
+              setUploadError("Failed to parse CSV file.");
+          }
+      };
+      reader.readAsText(file);
+      e.target.value = ''; // Reset input so same file can be selected again
+  };
+
+  const parseCSV = (content: string): Coordinates[] => {
+      const lines = content.split(/\r?\n/).filter(line => line.trim() !== '');
+      if (lines.length === 0) return [];
+
+      // Detect delimiter
+      const firstLine = lines[0];
+      const delimiter = firstLine.includes(',') ? ',' : firstLine.includes(';') ? ';' : '\t';
+      
+      const clean = (str: string) => str ? str.replace(/['"]/g, '').trim().toLowerCase() : '';
+
+      // Check for headers in the first line
+      const headers = firstLine.split(delimiter).map(clean);
+      let latIndex = headers.findIndex(h => h.includes('lat') || h.includes('north') || h.includes('y'));
+      let lngIndex = headers.findIndex(h => h.includes('lon') || h.includes('lng') || h.includes('east') || h.includes('x'));
+      
+      let startIndex = 1;
+
+      // If headers not clearly found, check if first line is data (numeric)
+      if (latIndex === -1 || lngIndex === -1) {
+          const firstValues = firstLine.split(delimiter).map(v => parseFloat(clean(v)));
+          if (!isNaN(firstValues[0]) && !isNaN(firstValues[1])) {
+              // Assume default columns 0 and 1
+              latIndex = 0;
+              lngIndex = 1;
+              startIndex = 0; // Read from first line
+          } else {
+              // Fallback to 0 and 1 but skip potential header
+              latIndex = 0;
+              lngIndex = 1;
+              startIndex = 1;
+          }
+      }
+
+      const points: Coordinates[] = [];
+      for (let i = startIndex; i < lines.length; i++) {
+          const parts = lines[i].split(delimiter);
+          if (parts.length > Math.max(latIndex, lngIndex)) {
+              const latStr = clean(parts[latIndex]);
+              const lngStr = clean(parts[lngIndex]);
+              const lat = parseFloat(latStr);
+              const lng = parseFloat(lngStr);
+
+              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                  points.push({ lat, lng });
+              }
+          }
+      }
+      return points;
   };
 
   const isLoading = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
 
   return (
-    <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-y-auto">
+    <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-y-auto shrink-0">
       <div className="p-6 border-b border-slate-800">
         <h1 className="text-xl font-bold flex items-center gap-2 text-cyan-400">
           <Globe className="w-6 h-6" />
           GeoProspector AI
         </h1>
         <p className="text-xs text-slate-500 mt-1">End-to-End Exploration Tool</p>
+        
+        {/* Security Badge */}
+        <div className="flex items-center gap-1 mt-2 text-[10px] text-green-500 bg-green-900/10 w-fit px-2 py-0.5 rounded border border-green-900/30 cursor-help" title="Data processed locally and via secure Google Gemini API.">
+            <ShieldCheck className="w-3 h-3" /> Secure Environment
+        </div>
       </div>
 
       <div className="p-4 space-y-6">
@@ -114,13 +210,17 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <div className="relative">
                     <input 
                         type="file" 
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        accept=".csv,.gpx,.kml"
+                        id="csv-upload"
+                        className="hidden"
+                        accept=".csv"
                         onChange={handleFileUpload}
                     />
-                    <button className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-slate-300 transition-colors h-full">
-                        <Upload className="w-3 h-3" /> Upload CSV
-                    </button>
+                    <label 
+                        htmlFor="csv-upload"
+                        className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-slate-300 transition-colors h-full cursor-pointer"
+                    >
+                        <Upload className="w-3 h-3" /> Import CSV
+                    </label>
                 </div>
                 <button 
                     onClick={onQuickScan}
@@ -129,6 +229,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <Zap className="w-3 h-3" /> Quick Scan
                 </button>
             </div>
+            {uploadError && <p className="text-[10px] text-red-400 mt-1">{uploadError}</p>}
           </div>
         </div>
 
@@ -252,7 +353,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     <span className={`text-xs font-bold transition-colors ${useDeepThinking ? 'text-indigo-300' : 'text-slate-400 group-hover:text-slate-300'}`}>
                         Deep Thinking Mode
                     </span>
-                    <span className="text-[10px] text-slate-500">
+                    <span className="text--[10px] text-slate-500">
                         {useDeepThinking ? 'Gemini 3 Pro Active (Max Reasoning)' : 'Gemini 2.5 Flash (Standard Speed)'}
                     </span>
                 </div>

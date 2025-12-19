@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer as LeafletMap, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline, CircleMarker, Polygon, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import { Coordinates, MapLayer } from '../types';
-import { Eye, EyeOff, Activity } from 'lucide-react';
+import { Eye, EyeOff, Activity, RefreshCw } from 'lucide-react';
 
 // Fix Leaflet icon issue in React without bundler support for image imports
 const iconUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png';
@@ -38,6 +38,7 @@ interface MapComponentProps {
 
 const layerDescriptions: Record<string, string> = {
   satellite: "Real-time optical imagery (Sentinel-2) for surface feature identification.",
+  google_satellite: "Ultra-high resolution composite imagery from Google Earth.",
   magnetic: "Airborne magnetic anomalies indicating subsurface faults and ferrous bodies.",
   radiometric: "Gamma-ray spectrometry (K, U, Th) revealing surface alteration zones.",
   electromagnetic: "Conductivity variations useful for detecting massive sulfides and groundwater.",
@@ -135,6 +136,29 @@ const MapComponent: React.FC<MapComponentProps> = ({
     usePlottedArea
 }) => {
   const [hoveredLayerId, setHoveredLayerId] = useState<string | null>(null);
+  const [refreshingLayerId, setRefreshingLayerId] = useState<string | null>(null);
+  const [layerRefreshVersions, setLayerRefreshVersions] = useState<Record<string, number>>({});
+
+  const handleRefreshLayer = (e: React.MouseEvent, layerId: string) => {
+      e.stopPropagation();
+      setRefreshingLayerId(layerId);
+      
+      // Update version to force tile reload
+      setLayerRefreshVersions(prev => ({
+          ...prev,
+          [layerId]: (prev[layerId] || 0) + 1
+      }));
+
+      // Reset spinning state after delay
+      setTimeout(() => {
+          setRefreshingLayerId(null);
+      }, 1000);
+  };
+
+  const getUrlWithVersion = (id: string, url: string) => {
+      const v = layerRefreshVersions[id] || 0;
+      return v > 0 ? `${url}?v=${v}` : url;
+  };
   
   return (
     <div className="h-full w-full relative z-0">
@@ -149,11 +173,20 @@ const MapComponent: React.FC<MapComponentProps> = ({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         
-        {/* Simulation of different satellite/geophysical layers */}
+        {/* Google Earth Satellite Layer */}
+        {layers.find(l => l.id === 'google_satellite' && l.visible) && (
+           <TileLayer
+             opacity={layers.find(l => l.id === 'google_satellite')?.opacity ?? 1.0}
+             url={getUrlWithVersion('google_satellite', "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")}
+             attribution='Imagery &copy; Google Earth'
+           />
+        )}
+
+        {/* Sentinel-2 Satellite Layer */}
         {layers.find(l => l.id === 'satellite' && l.visible) && (
            <TileLayer
              opacity={layers.find(l => l.id === 'satellite')?.opacity ?? 1.0}
-             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+             url={getUrlWithVersion('satellite', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")}
              attribution='Tiles &copy; Esri'
            />
         )}
@@ -162,7 +195,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         {layers.find(l => l.id === 'terrain' && l.visible) && (
             <TileLayer
                 opacity={layers.find(l => l.id === 'terrain')?.opacity ?? 0.5}
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"
+                url={getUrlWithVersion('terrain', "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}")}
                 className="mix-blend-multiply contrast-125"
             />
         )}
@@ -171,7 +204,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         {layers.find(l => l.id === 'magnetic' && l.visible) && (
             <TileLayer 
                 opacity={layers.find(l => l.id === 'magnetic')?.opacity ?? 0.5}
-                url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png" 
+                url={getUrlWithVersion('magnetic', "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png")}
             />
         )}
 
@@ -179,7 +212,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         {layers.find(l => l.id === 'radiometric' && l.visible) && (
             <TileLayer 
                 opacity={layers.find(l => l.id === 'radiometric')?.opacity ?? 0.6}
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}"
+                url={getUrlWithVersion('radiometric', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}")}
                 className="sepia hue-rotate-180 contrast-125"
             />
         )}
@@ -188,7 +221,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         {layers.find(l => l.id === 'electromagnetic' && l.visible) && (
             <TileLayer 
                 opacity={layers.find(l => l.id === 'electromagnetic')?.opacity ?? 0.4}
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}"
+                url={getUrlWithVersion('electromagnetic', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}")}
                 className="invert hue-rotate-180"
             />
         )}
@@ -198,7 +231,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
              <>
                  <TileLayer 
                     opacity={layers.find(l => l.id === 'gravity')?.opacity ?? 0.3}
-                    url="https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png"
+                    url={getUrlWithVersion('gravity', "https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png")}
                     className="invert filter contrast-150"
                  />
                  {layers.find(l => l.id === 'gravity')?.showContours && (
@@ -210,7 +243,7 @@ const MapComponent: React.FC<MapComponentProps> = ({
         {layers.find(l => l.id === 'geology' && l.visible) && (
              <TileLayer 
                 opacity={layers.find(l => l.id === 'geology')?.opacity ?? 0.4}
-                url="https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}"
+                url={getUrlWithVersion('geology', "https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}")}
                 attribution="Tiles &copy; Esri &mdash; National Geographic"
              />
         )}
@@ -254,31 +287,45 @@ const MapComponent: React.FC<MapComponentProps> = ({
       </LeafletMap>
 
       {/* Layer Legend / Indicators */}
-      <div className="absolute bottom-4 left-4 bg-slate-900/90 p-3 rounded-md border border-slate-700 z-[1000] text-xs shadow-xl min-w-[220px]">
-        <h4 className="font-bold mb-2 text-slate-300">Active Layers & Opacity</h4>
+      <div className="absolute bottom-4 left-4 bg-slate-900/90 p-3 rounded-md border border-slate-700 z-[1000] text-xs shadow-xl min-w-[220px] max-h-[400px] overflow-y-auto">
+        <h4 className="font-bold mb-2 text-slate-300 sticky top-0 bg-slate-900 pb-1 z-10">Active Layers & Opacity</h4>
         <ul className="space-y-3">
           {layers.map(layer => (
              <li key={layer.id} className="flex flex-col gap-1 relative">
-               <button 
-                onClick={() => toggleLayer(layer.id)}
-                onMouseEnter={() => setHoveredLayerId(layer.id)}
-                onMouseLeave={() => setHoveredLayerId(null)}
-                className={`flex items-center gap-2 transition-all duration-300 w-full text-left hover:bg-slate-800/50 rounded p-1 ${layer.visible ? 'opacity-100' : 'opacity-50'}`}
-               >
-                 <span className={`w-2 h-2 rounded-full transition-colors duration-300 shrink-0 ${layer.visible ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' : 'bg-slate-600'}`}></span>
-                 <span className={`font-medium transition-colors duration-300 flex-1 ${layer.visible ? 'text-cyan-100' : 'text-slate-500'}`}>{layer.name}</span>
-                 {layer.visible ? (
-                    <Eye className="w-3 h-3 text-cyan-400" />
-                 ) : (
-                    <EyeOff className="w-3 h-3 text-slate-500" />
-                 )}
-               </button>
+               <div className="flex items-center gap-2 w-full">
+                   <button 
+                    onClick={() => toggleLayer(layer.id)}
+                    onMouseEnter={() => setHoveredLayerId(layer.id)}
+                    onMouseLeave={() => setHoveredLayerId(null)}
+                    className={`flex items-center gap-2 transition-all duration-300 flex-1 text-left hover:bg-slate-800/50 rounded p-1 ${layer.visible ? 'opacity-100' : 'opacity-50'}`}
+                   >
+                     <span className={`w-2 h-2 rounded-full transition-colors duration-300 shrink-0 ${layer.visible ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' : 'bg-slate-600'}`}></span>
+                     <span className={`font-medium transition-colors duration-300 flex-1 ${layer.visible ? 'text-cyan-100' : 'text-slate-500'}`}>{layer.name}</span>
+                     {layer.visible ? (
+                        <Eye className="w-3 h-3 text-cyan-400" />
+                     ) : (
+                        <EyeOff className="w-3 h-3 text-slate-500" />
+                     )}
+                   </button>
+                   
+                   {/* Fetch / Refresh Button */}
+                   {layer.visible && (
+                       <button 
+                         onClick={(e) => handleRefreshLayer(e, layer.id)}
+                         className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-cyan-400 transition-colors"
+                         title="Simulate Fetching New Data"
+                       >
+                           <RefreshCw className={`w-3 h-3 ${refreshingLayerId === layer.id ? 'animate-spin text-cyan-400' : ''}`} />
+                       </button>
+                   )}
+               </div>
                
                {/* Tooltip */}
                {hoveredLayerId === layer.id && (
                    <div className="absolute left-full top-0 ml-3 w-52 bg-slate-900/95 text-[10px] text-slate-300 p-2.5 rounded border border-slate-600 shadow-xl z-[1002] pointer-events-none backdrop-blur-sm animate-in fade-in slide-in-from-left-2 duration-200">
                        <div className="font-bold text-cyan-500 mb-1 capitalize">{layer.type} Data</div>
-                       {layerDescriptions[layer.type] ?? "Geophysical visualization layer."}
+                       {/* Fix: '||' and '??' operations cannot be mixed without parentheses. */}
+                       {(layerDescriptions[layer.id] || layerDescriptions[layer.type]) ?? "Geophysical visualization layer."}
                        {/* Arrow indicator */}
                        <div className="absolute top-3 -left-1.5 w-3 h-3 bg-slate-900 border-l border-b border-slate-600 transform rotate-45"></div>
                    </div>
