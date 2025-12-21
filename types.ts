@@ -32,6 +32,10 @@ export interface MiningReport {
   sources: string[];
   rawMarkdown: string;
   isDeepAnalysis?: boolean;
+  mapSnapshot?: string; 
+  center?: Coordinates;
+  boundary?: Coordinates[]; 
+  mineralFocus?: string;
 }
 
 export interface MapLayer {

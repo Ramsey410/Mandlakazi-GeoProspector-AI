@@ -2,32 +2,37 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Coordinates, MiningReport, NearbyPlace } from '../types';
 
-// ALWAYS use a named parameter and process.env.API_KEY directly.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// --- 1. SEARCH GROUNDING (Existing upgraded) ---
-export const analyzeGeology = async (coords: Coordinates, locationName: string, areaPolygon?: Coordinates[]): Promise<MiningReport> => {
+export const analyzeGeology = async (
+  coords: Coordinates, 
+  locationName: string, 
+  areaPolygon?: Coordinates[],
+  mineralFocus?: string
+): Promise<MiningReport> => {
   
   let locationContext = `coordinates: ${coords.lat}, ${coords.lng} (${locationName})`;
   let areaPrompt = "";
 
   if (areaPolygon && areaPolygon.length >= 3) {
       const polyStr = areaPolygon.map(p => `[${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}]`).join(', ');
-      locationContext += `. \nANALYSIS BOUNDARY: The analysis MUST be strictly focused within the polygon defined by these coordinates: ${polyStr}.`;
+      locationContext += `. \nANALYSIS BOUNDARY: Focused strictly within polygon: ${polyStr}.`;
       areaPrompt = "Evaluate the geological continuity and structural containment within this specific polygonal boundary.";
   }
 
+  const focusPrompt = mineralFocus ? `\nSPECIAL FOCUS: The client is primarily interested in finding ${mineralFocus}. Tailor the entire analysis, anomaly detection simulation, and feasibility study to focus on these specific minerals.` : "";
+
   const prompt = `
     Perform a comprehensive geological and geophysical evaluation for a mining project at ${locationContext}.
-    ${areaPrompt}
+    ${areaPrompt}${focusPrompt}
     
     You are simulating an advanced GeoAI pipeline. 
     1. ACT AS A SENIOR GEOLOGIST.
-    2. Use Google Search to find real geological data, active mining projects, and stratigraphy for this specific region (especially looking for data from geoscience.org.za, mintek.co.za, and dmre.gov.za if in South Africa, or USGS/local surveys otherwise).
-    3. SIMULATE the results of analyzing Sentinel-2 spectral data and airborne magnetic surveys for this area. What likely anomalies would exist here based on the known regional geology?
-    4. Structure the report as a professional "Preliminary Economic Assessment" (PEA) chapter.
+    2. Use Google Search to find real geological data, active mining projects, and stratigraphy for this specific region.
+    3. SIMULATE the results of analyzing Sentinel-2 spectral data and airborne magnetic surveys.
+    4. Structure the report as a professional "Preliminary Economic Assessment" (PEA).
 
-    CRITICAL: You must output PURE JSON text without Markdown formatting blocks (no \`\`\`json).
+    CRITICAL: You must output PURE JSON text without Markdown formatting blocks.
     The JSON must match this structure exactly:
     {
       "title": "Project Title",
@@ -43,7 +48,6 @@ export const analyzeGeology = async (coords: Coordinates, locationName: string, 
   `;
 
   try {
-    // For Complex Text Tasks with Search Grounding: 'gemini-3-pro-preview'
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
@@ -52,7 +56,6 @@ export const analyzeGeology = async (coords: Coordinates, locationName: string, 
       }
     });
 
-    // Access text property directly (it is a property, not a method).
     let jsonStr = response.text || "{}";
     jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?/g, '');
     
@@ -64,7 +67,6 @@ export const analyzeGeology = async (coords: Coordinates, locationName: string, 
     try {
         parsedData = JSON.parse(jsonStr) as MiningReport;
     } catch (e) {
-        console.warn("Malformed JSON from Gemini, attempting soft fail", e);
         parsedData = {
             title: `Exploration Report: ${locationName}`,
             location: `${coords.lat}, ${coords.lng}`,
@@ -78,151 +80,90 @@ export const analyzeGeology = async (coords: Coordinates, locationName: string, 
         };
     }
     
-    if (parsedData.sources) {
-        parsedData.sources = [...new Set([...parsedData.sources, ...groundingSources])];
-    } else {
-        parsedData.sources = groundingSources;
-    }
+    parsedData.mineralFocus = mineralFocus;
+    parsedData.sources = [...new Set([...(parsedData.sources || []), ...groundingSources])];
 
     return parsedData;
-
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
     throw error;
   }
 };
 
-// --- 2. DEEP THINKING MODE ---
 export const performDeepThinkingAnalysis = async (coords: Coordinates, locationName: string): Promise<string> => {
-  const prompt = `
-    Conduct an extremely deep, theoretical geological analysis of the area at ${coords.lat}, ${coords.lng} (${locationName}).
-    
-    Consider:
-    - Deep crustal structures and tectonic history.
-    - Hydrothermal fluid flow pathways.
-    - Potential for hidden/blind deposits under cover.
-    - Compare with similar geological settings globally.
-    
-    Provide a highly technical, dense geological treatise.
-  `;
-
+  const prompt = `Conduct an extremely deep, theoretical geological analysis of the area at ${coords.lat}, ${coords.lng} (${locationName}). Consider deep crustal structures and tectonics.`;
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
-      config: {
-        thinkingConfig: { thinkingBudget: 32768 }, // max budget for gemini-3-pro-preview
-      }
+      config: { thinkingConfig: { thinkingBudget: 32768 } }
     });
     return response.text || "Analysis failed.";
   } catch (error) {
-    console.error("Deep Thinking Error:", error);
     return "Deep thinking analysis unavailable.";
   }
 };
 
-// --- 3. FAST LOW-LATENCY RESPONSE ---
 export const quickGeologyScan = async (coords: Coordinates): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-flash-lite-latest', // Correct model alias for gemini lite or flash lite
-      contents: `Provide a 1-sentence quick geological summary of the area at coordinates ${coords.lat}, ${coords.lng}. Fast response needed.`,
+      model: 'gemini-flash-lite-latest',
+      contents: `Provide a 1-sentence quick geological summary of coords ${coords.lat}, ${coords.lng}.`,
     });
     return response.text || "No data.";
   } catch (error) {
-    console.error("Quick Scan Error:", error);
     return "";
   }
 };
 
-// --- 4. MAPS GROUNDING ---
 export const findNearbyMines = async (coords: Coordinates): Promise<NearbyPlace[]> => {
   try {
-    // Maps grounding is only supported in Gemini 2.5 series models.
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `List active mining operations or significant geological sites near latitude ${coords.lat}, longitude ${coords.lng}.`,
+      contents: `List active mining operations near latitude ${coords.lat}, longitude ${coords.lng}.`,
       config: {
         tools: [{ googleMaps: {} }],
-        toolConfig: {
-            retrievalConfig: {
-                latLng: { latitude: coords.lat, longitude: coords.lng }
-            }
-        }
+        toolConfig: { retrievalConfig: { latLng: { latitude: coords.lat, longitude: coords.lng } } }
       }
     });
-
-    // Extract grounding chunks for Maps
     const places: NearbyPlace[] = [];
-    
-    const lines = (response.text || "").split('\n').filter(l => l.includes('- ') || l.match(/^\d\./));
-    lines.forEach(line => {
-        places.push({ title: line.replace(/[-*]\s/, '').trim() });
+    (response.text || "").split('\n').forEach(line => {
+        if (line.includes('- ') || line.match(/^\d\./)) places.push({ title: line.replace(/[-*]\s/, '').trim() });
     });
-
     return places;
   } catch (error) {
-    console.error("Maps Grounding Error:", error);
     return [];
   }
 };
 
-// --- 5. CHATBOT & VISION ---
 export const sendChatMessage = async (history: any[], newMessage: string, imageBase64?: string): Promise<string> => {
   try {
     let parts: any[] = [];
-    
     if (imageBase64) {
-        parts.push({
-            inlineData: {
-                mimeType: "image/jpeg",
-                data: imageBase64
-            }
-        });
-        parts.push({ text: "Analyze this image: " + newMessage });
+        parts.push({ inlineData: { mimeType: "image/jpeg", data: imageBase64 } });
+        parts.push({ text: "Analyze this: " + newMessage });
     } else {
         parts.push({ text: newMessage });
     }
-
     const chat = ai.chats.create({
-        model: 'gemini-3-pro-preview', // Capable of complex reasoning
-        history: history.map(h => ({
-            role: h.role,
-            parts: [{ text: h.text }] 
-        }))
+        model: 'gemini-3-pro-preview',
+        history: history.map(h => ({ role: h.role, parts: [{ text: h.text }] }))
     });
-
-    // chat.sendMessage only accepts the message parameter.
-    const result = await chat.sendMessage({
-        message: { parts: parts }
-    });
-
-    return result.text || "I couldn't generate a response.";
-
+    const result = await chat.sendMessage({ message: { parts: parts } });
+    return result.text || "Error.";
   } catch (error) {
-    console.error("Chat Error:", error);
-    return "Error communicating with AI assistant.";
+    return "Chat error.";
   }
 };
 
 export const generateChartData = async (coords: Coordinates): Promise<any[]> => {
-    const prompt = `
-      Generate a JSON array of 20 objects representing a simulated borehole log or depth sounding at ${coords.lat}, ${coords.lng}.
-      Each object should have:
-      - depth (meters, incrementing)
-      - resistivity (Ohm-m, realistic values for the likely geology)
-      - magneticSusceptibility (SI units)
-      
-      Based on the likely geology of this real-world location.
-    `;
-
+    const prompt = `Generate a JSON array of 20 depth sounding points at ${coords.lat}, ${coords.lng}.`;
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
-                // Use responseSchema for expected output.
                 responseSchema: {
                   type: Type.ARRAY,
                   items: {
@@ -240,7 +181,6 @@ export const generateChartData = async (coords: Coordinates): Promise<any[]> => 
         if(response.text) return JSON.parse(response.text);
         return [];
     } catch (e) {
-        console.error("Chart Generation Error:", e);
         return [];
     }
 }
