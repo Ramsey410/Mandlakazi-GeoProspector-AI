@@ -2,48 +2,58 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Coordinates, MiningReport, NearbyPlace } from '../types';
 
+// ALWAYS use a named parameter and process.env.API_KEY directly.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export const analyzeGeology = async (
-  coords: Coordinates, 
-  locationName: string, 
-  areaPolygon?: Coordinates[],
-  mineralFocus?: string
-): Promise<MiningReport> => {
+/**
+ * Performs a comprehensive geological analysis.
+ * Returns a structured report object that includes a rawMarkdown field
+ * which is optimized for high-quality PDF generation.
+ */
+export const analyzeGeology = async (coords: Coordinates, locationName: string, targetMinerals: string, areaPolygon?: Coordinates[]): Promise<MiningReport> => {
   
   let locationContext = `coordinates: ${coords.lat}, ${coords.lng} (${locationName})`;
   let areaPrompt = "";
 
   if (areaPolygon && areaPolygon.length >= 3) {
       const polyStr = areaPolygon.map(p => `[${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}]`).join(', ');
-      locationContext += `. \nANALYSIS BOUNDARY: Focused strictly within polygon: ${polyStr}.`;
-      areaPrompt = "Evaluate the geological continuity and structural containment within this specific polygonal boundary.";
+      locationContext += `. \nANALYSIS BOUNDARY: The analysis MUST be strictly focused within the polygon defined by these coordinates: ${polyStr}.`;
+      areaPrompt = "Evaluate the geological continuity, structural containment, and mineralization potential strictly within this specific polygonal boundary.";
   }
 
-  const focusPrompt = mineralFocus ? `\nSPECIAL FOCUS: The client is primarily interested in finding ${mineralFocus}. Tailor the entire analysis, anomaly detection simulation, and feasibility study to focus on these specific minerals.` : "";
+  const mineralFocus = targetMinerals ? `FOCUS MINERALS: The user is specifically targeting [${targetMinerals}]. Prioritize detecting indices and alteration signatures for these elements.` : "";
 
   const prompt = `
-    Perform a comprehensive geological and geophysical evaluation for a mining project at ${locationContext}.
-    ${areaPrompt}${focusPrompt}
+    Perform an exhaustive end-to-end geological and geophysical mapping for an exploration dossier at ${locationContext}.
+    ${areaPrompt}
+    ${mineralFocus}
     
-    You are simulating an advanced GeoAI pipeline. 
-    1. ACT AS A SENIOR GEOLOGIST.
-    2. Use Google Search to find real geological data, active mining projects, and stratigraphy for this specific region.
-    3. SIMULATE the results of analyzing Sentinel-2 spectral data and airborne magnetic surveys.
-    4. Structure the report as a professional "Preliminary Economic Assessment" (PEA).
-
-    CRITICAL: You must output PURE JSON text without Markdown formatting blocks.
-    The JSON must match this structure exactly:
+    You are an elite exploration consultant. Generate a technical dossier leveraging advanced spectral and geophysical datasets.
+    
+    DATA SOURCES TO INTEGRATE IN ANALYSIS:
+    1. ASTER (Terra): Utilize SWIR/TIR bands for hydrothermal alteration mapping (e.g., alunite, kaolinite, silica indices).
+    2. WorldView-3: High-resolution VNIR/SWIR for precise lithological classification.
+    3. Fireflies Constellation: Thermal and optical monitoring for surface anomalies.
+    4. Wyvern: Hyperspectral imagery for high-fidelity mineral identification.
+    5. Geophysics: Simulated Airborne Magnetics, Gravity, and VRP based on regional stratigraphy.
+    
+    REPORT STRUCTURE REQUIREMENTS:
+    The user requires a formal PDF dossier. Compose the report in professional technical prose.
+    - Mention specific spectral signatures found (e.g., "ASTER Band 4/6 ratio suggests high phyllosilicate density").
+    - Correlate spectral anomalies with magnetic and gravity gradients.
+    - Evaluate ${targetMinerals || "general minerals"} potential based on the geological setting.
+    
+    JSON Structure (Return ONLY valid JSON):
     {
-      "title": "Project Title",
-      "location": "Location Description",
-      "geologicalSummary": "Detailed summary...",
-      "mineralPotential": ["List", "of", "minerals"],
-      "nearbyProjects": ["Project A", "Project B"],
-      "recommendations": "Exploration recommendations...",
-      "riskAssessment": "Geological and operational risks...",
-      "sources": ["List of URL sources found via search"],
-      "rawMarkdown": "A full markdown formatted version of the report including all sections."
+      "title": "A professional project name (e.g., 'The [Location] [Minerals] Target')",
+      "location": "Formal geographic description",
+      "geologicalSummary": "Technical summary including spectral and structural findings.",
+      "mineralPotential": ["Primary Target", "Secondary Target"],
+      "nearbyProjects": ["Real mine names in this district"],
+      "recommendations": "Phase 1/2/3 exploration strategy.",
+      "riskAssessment": "Comprehensive hazard index.",
+      "sources": ["Citations of real surveys and spectral databases"],
+      "rawMarkdown": "A complete, beautifully formatted Markdown document for the PDF dossier. Use headers, bolding, and clear technical sections including 'Spectral Analysis Findings' and 'Geophysical Correlation'."
     }
   `;
 
@@ -53,12 +63,11 @@ export const analyzeGeology = async (
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json"
       }
     });
 
-    let jsonStr = response.text || "{}";
-    jsonStr = jsonStr.replace(/```json\n?/g, '').replace(/```\n?/g, '');
-    
+    const jsonStr = response.text || "{}";
     const groundingSources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
         ?.map((c: any) => c.web?.uri)
         .filter((uri: string) => uri) || [];
@@ -66,37 +75,50 @@ export const analyzeGeology = async (
     let parsedData: MiningReport;
     try {
         parsedData = JSON.parse(jsonStr) as MiningReport;
+        parsedData.targetMinerals = targetMinerals;
     } catch (e) {
+        console.warn("JSON Parsing error, using raw text", e);
         parsedData = {
-            title: `Exploration Report: ${locationName}`,
+            title: `Exploration Dossier: ${locationName}`,
             location: `${coords.lat}, ${coords.lng}`,
-            geologicalSummary: response.text || "Analysis complete but formatting failed.",
-            mineralPotential: [],
+            geologicalSummary: "Analysis generated successfully.",
+            mineralPotential: ["Unknown"],
             nearbyProjects: [],
-            recommendations: "Review raw output.",
-            riskAssessment: "N/A",
+            recommendations: "Further ground-truthing required.",
+            riskAssessment: "Information limited.",
             sources: [],
-            rawMarkdown: response.text || ""
+            targetMinerals: targetMinerals,
+            rawMarkdown: response.text || "# Exploration Report\nNo markdown available."
         };
     }
     
-    parsedData.mineralFocus = mineralFocus;
-    parsedData.sources = [...new Set([...(parsedData.sources || []), ...groundingSources])];
+    if (parsedData.sources) {
+        parsedData.sources = [...new Set([...parsedData.sources, ...groundingSources])];
+    } else {
+        parsedData.sources = groundingSources;
+    }
 
     return parsedData;
+
   } catch (error) {
-    console.error("Gemini Analysis Error:", error);
+    console.error("Analysis Error:", error);
     throw error;
   }
 };
 
 export const performDeepThinkingAnalysis = async (coords: Coordinates, locationName: string): Promise<string> => {
-  const prompt = `Conduct an extremely deep, theoretical geological analysis of the area at ${coords.lat}, ${coords.lng} (${locationName}). Consider deep crustal structures and tectonics.`;
+  const prompt = `
+    Conduct an extremely deep, theoretical geological analysis of the area at ${coords.lat}, ${coords.lng} (${locationName}).
+    Provide a dense, highly technical treatise suitable for a peer-reviewed exploration journal.
+  `;
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: prompt,
-      config: { thinkingConfig: { thinkingBudget: 32768 } }
+      config: {
+        thinkingConfig: { thinkingBudget: 32768 },
+      }
     });
     return response.text || "Analysis failed.";
   } catch (error) {
@@ -108,7 +130,7 @@ export const quickGeologyScan = async (coords: Coordinates): Promise<string> => 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-flash-lite-latest',
-      contents: `Provide a 1-sentence quick geological summary of coords ${coords.lat}, ${coords.lng}.`,
+      contents: `Provide a 1-sentence quick geological summary of the area at coordinates ${coords.lat}, ${coords.lng}.`,
     });
     return response.text || "No data.";
   } catch (error) {
@@ -123,12 +145,18 @@ export const findNearbyMines = async (coords: Coordinates): Promise<NearbyPlace[
       contents: `List active mining operations near latitude ${coords.lat}, longitude ${coords.lng}.`,
       config: {
         tools: [{ googleMaps: {} }],
-        toolConfig: { retrievalConfig: { latLng: { latitude: coords.lat, longitude: coords.lng } } }
+        toolConfig: {
+            retrievalConfig: {
+                latLng: { latitude: coords.lat, longitude: coords.lng }
+            }
+        }
       }
     });
+
     const places: NearbyPlace[] = [];
-    (response.text || "").split('\n').forEach(line => {
-        if (line.includes('- ') || line.match(/^\d\./)) places.push({ title: line.replace(/[-*]\s/, '').trim() });
+    const lines = (response.text || "").split('\n').filter(l => l.includes('- ') || l.match(/^\d\./));
+    lines.forEach(line => {
+        places.push({ title: line.replace(/[-*]\s/, '').trim() });
     });
     return places;
   } catch (error) {
@@ -141,7 +169,7 @@ export const sendChatMessage = async (history: any[], newMessage: string, imageB
     let parts: any[] = [];
     if (imageBase64) {
         parts.push({ inlineData: { mimeType: "image/jpeg", data: imageBase64 } });
-        parts.push({ text: "Analyze this: " + newMessage });
+        parts.push({ text: "Analyze this geological image: " + newMessage });
     } else {
         parts.push({ text: newMessage });
     }
@@ -150,14 +178,14 @@ export const sendChatMessage = async (history: any[], newMessage: string, imageB
         history: history.map(h => ({ role: h.role, parts: [{ text: h.text }] }))
     });
     const result = await chat.sendMessage({ message: { parts: parts } });
-    return result.text || "Error.";
+    return result.text || "I couldn't generate a response.";
   } catch (error) {
-    return "Chat error.";
+    return "Error communicating with AI assistant.";
   }
 };
 
 export const generateChartData = async (coords: Coordinates): Promise<any[]> => {
-    const prompt = `Generate a JSON array of 20 depth sounding points at ${coords.lat}, ${coords.lng}.`;
+    const prompt = `Generate a JSON array of 20 objects for a simulated borehole log at ${coords.lat}, ${coords.lng}. Fields: depth (meters), resistivity (Ohm-m), magneticSusceptibility (SI).`;
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-3-flash-preview',

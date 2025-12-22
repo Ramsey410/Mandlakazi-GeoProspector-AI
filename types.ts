@@ -31,11 +31,9 @@ export interface MiningReport {
   riskAssessment: string;
   sources: string[];
   rawMarkdown: string;
+  targetMinerals?: string;
   isDeepAnalysis?: boolean;
-  mapSnapshot?: string; 
-  center?: Coordinates;
-  boundary?: Coordinates[]; 
-  mineralFocus?: string;
+  mapSnapshot?: string; // Base64 or URL of the captured map view
 }
 
 export interface MapLayer {
@@ -43,7 +41,7 @@ export interface MapLayer {
   name: string;
   visible: boolean;
   opacity: number;
-  type: 'satellite' | 'magnetic' | 'gravity' | 'geology' | 'radiometric' | 'electromagnetic' | 'terrain';
+  type: 'satellite' | 'magnetic' | 'gravity' | 'geology' | 'radiometric' | 'electromagnetic' | 'terrain' | 'spectral';
   showContours?: boolean;
 }
 

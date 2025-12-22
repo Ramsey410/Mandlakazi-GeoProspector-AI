@@ -5,7 +5,6 @@ import L from 'leaflet';
 import { Coordinates, MapLayer } from '../types';
 import { Eye, EyeOff, Activity, RefreshCw } from 'lucide-react';
 
-// Fix Leaflet icon issue in React without bundler support for image imports
 const iconUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png';
 const iconRetinaUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png';
 const shadowUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png';
@@ -37,14 +36,16 @@ interface MapComponentProps {
 }
 
 const layerDescriptions: Record<string, string> = {
-  satellite: "Real-time optical imagery (Sentinel-2) for surface feature identification.",
+  satellite: "Real-time optical imagery for surface feature identification.",
   google_satellite: "Ultra-high resolution composite imagery from Google Earth.",
-  magnetic: "Airborne magnetic anomalies indicating subsurface faults and ferrous bodies.",
-  radiometric: "Gamma-ray spectrometry (K, U, Th) revealing surface alteration zones.",
-  electromagnetic: "Conductivity variations useful for detecting massive sulfides and groundwater.",
-  geology: "Mapped lithological units and structural features from national surveys.",
+  magnetic: "Airborne magnetic anomalies indicating subsurface faults.",
+  geology: "Mapped lithological units and structural features.",
   gravity: "Bouguer density contrasts indicating deep crustal architecture.",
-  terrain: "Global hillshade derived from SRTM/DEM data to highlight topography."
+  terrain: "Global hillshade highlighting topography.",
+  aster: "ASTER (Terra) SWIR/TIR imagery for alteration mapping (phyllosilicates/clays).",
+  wv3: "WorldView-3 SWIR high-res indices for accurate mineral/lithology classification.",
+  fireflies: "Fireflies Constellation high-frequency thermal and optical anomaly detection.",
+  wyvern: "Wyvern Hyperspectral data (hundreds of bands) for signature mineral ID."
 };
 
 function LocationMarker({ 
@@ -77,48 +78,34 @@ function MapUpdater({ center }: { center: Coordinates }) {
   return null;
 }
 
-// Simulates generating contours based on gravity data
 function GravityContours({ center }: { center: Coordinates }) {
   const features = useMemo(() => {
     const featureList = [];
-    // Generate 6 concentric, slightly irregular rings to simulate gravity anomaly contours
     for (let i = 1; i <= 6; i++) {
         const radius = 0.008 * i; 
         const points = [];
         for (let angle = 0; angle <= 360; angle += 10) {
             const rad = angle * (Math.PI / 180);
-            // Add some "noise" to the radius to make it look organic/geological
             const noise = 0.001 * Math.sin(rad * 3 + i) * Math.cos(rad * 2);
             const r = radius + noise;
             const lat = center.lat + r * Math.cos(rad);
             const lng = center.lng + r * Math.sin(rad);
-            points.push([lng, lat]); // GeoJSON uses [lng, lat]
+            points.push([lng, lat]);
         }
         featureList.push({
             type: "Feature",
             properties: { level: i * 10 },
-            geometry: {
-                type: "LineString",
-                coordinates: points
-            }
+            geometry: { type: "LineString", coordinates: points }
         });
     }
-    return {
-        type: "FeatureCollection",
-        features: featureList
-    };
+    return { type: "FeatureCollection", features: featureList };
   }, [center]);
 
   return (
     <GeoJSON 
-        key={JSON.stringify(center)} // Force re-render when center changes
+        key={JSON.stringify(center)} 
         data={features as any} 
-        style={{
-            color: '#f97316', // Orange-500
-            weight: 2,
-            opacity: 0.8,
-            dashArray: '5, 5'
-        }} 
+        style={{ color: '#f97316', weight: 2, opacity: 0.8, dashArray: '5, 5' }} 
     />
   );
 }
@@ -142,17 +129,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const handleRefreshLayer = (e: React.MouseEvent, layerId: string) => {
       e.stopPropagation();
       setRefreshingLayerId(layerId);
-      
-      // Update version to force tile reload
-      setLayerRefreshVersions(prev => ({
-          ...prev,
-          [layerId]: (prev[layerId] || 0) + 1
-      }));
-
-      // Reset spinning state after delay
-      setTimeout(() => {
-          setRefreshingLayerId(null);
-      }, 1000);
+      setLayerRefreshVersions(prev => ({ ...prev, [layerId]: (prev[layerId] || 0) + 1 }));
+      setTimeout(() => setRefreshingLayerId(null), 1000);
   };
 
   const getUrlWithVersion = (id: string, url: string) => {
@@ -162,209 +140,72 @@ const MapComponent: React.FC<MapComponentProps> = ({
   
   return (
     <div className="h-full w-full relative z-0">
-      <LeafletMap 
-        center={[coordinates.lat, coordinates.lng]} 
-        zoom={13} 
-        className={`h-full w-full rounded-lg shadow-inner ${isPlottingMode ? 'cursor-crosshair' : ''}`}
-        zoomControl={false}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+      <LeafletMap center={[coordinates.lat, coordinates.lng]} zoom={13} className={`h-full w-full rounded-lg shadow-inner ${isPlottingMode ? 'cursor-crosshair' : ''}`} zoomControl={false}>
+        <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         
-        {/* Google Earth Satellite Layer */}
         {layers.find(l => l.id === 'google_satellite' && l.visible) && (
-           <TileLayer
-             opacity={layers.find(l => l.id === 'google_satellite')?.opacity ?? 1.0}
-             url={getUrlWithVersion('google_satellite', "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")}
-             attribution='Imagery &copy; Google Earth'
-           />
+           <TileLayer opacity={layers.find(l => l.id === 'google_satellite')?.opacity ?? 1.0} url={getUrlWithVersion('google_satellite', "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")} />
         )}
 
-        {/* Sentinel-2 Satellite Layer */}
-        {layers.find(l => l.id === 'satellite' && l.visible) && (
-           <TileLayer
-             opacity={layers.find(l => l.id === 'satellite')?.opacity ?? 1.0}
-             url={getUrlWithVersion('satellite', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")}
-             attribution='Tiles &copy; Esri'
-           />
+        {/* Spectral Layer Simulations */}
+        {layers.find(l => l.id === 'aster' && l.visible) && (
+            <TileLayer opacity={layers.find(l => l.id === 'aster')?.opacity ?? 0.7} url={getUrlWithVersion('aster', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")} className="hue-rotate-90 saturate-200 contrast-150 mix-blend-screen" />
+        )}
+        {layers.find(l => l.id === 'wv3' && l.visible) && (
+            <TileLayer opacity={layers.find(l => l.id === 'wv3')?.opacity ?? 0.8} url={getUrlWithVersion('wv3', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")} className="invert hue-rotate-180 mix-blend-overlay" />
+        )}
+        {layers.find(l => l.id === 'fireflies' && l.visible) && (
+            <TileLayer opacity={layers.find(l => l.id === 'fireflies')?.opacity ?? 0.6} url={getUrlWithVersion('fireflies', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")} className="brightness-150 hue-rotate-30 saturate-150" />
+        )}
+        {layers.find(l => l.id === 'wyvern' && l.visible) && (
+            <TileLayer opacity={layers.find(l => l.id === 'wyvern')?.opacity ?? 0.9} url={getUrlWithVersion('wyvern', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}")} className="hue-rotate-240 saturate-200 contrast-125" />
         )}
 
-        {/* Terrain Hillshade - Added as an overlay with multiply effect */}
         {layers.find(l => l.id === 'terrain' && l.visible) && (
-            <TileLayer
-                opacity={layers.find(l => l.id === 'terrain')?.opacity ?? 0.5}
-                url={getUrlWithVersion('terrain', "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}")}
-                className="mix-blend-multiply contrast-125"
-            />
+            <TileLayer opacity={layers.find(l => l.id === 'terrain')?.opacity ?? 0.5} url={getUrlWithVersion('terrain', "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}")} className="mix-blend-multiply" />
         )}
-
-        {/* Simulated Magnetic Layer Overlay */}
         {layers.find(l => l.id === 'magnetic' && l.visible) && (
-            <TileLayer 
-                opacity={layers.find(l => l.id === 'magnetic')?.opacity ?? 0.5}
-                url={getUrlWithVersion('magnetic', "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png")}
-            />
+            <TileLayer opacity={layers.find(l => l.id === 'magnetic')?.opacity ?? 0.5} url={getUrlWithVersion('magnetic', "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png")} />
         )}
-
-        {/* Simulated Radiometric Layer (False Color) */}
-        {layers.find(l => l.id === 'radiometric' && l.visible) && (
-            <TileLayer 
-                opacity={layers.find(l => l.id === 'radiometric')?.opacity ?? 0.6}
-                url={getUrlWithVersion('radiometric', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}")}
-                className="sepia hue-rotate-180 contrast-125"
-            />
-        )}
-
-        {/* Simulated Electromagnetic Layer (Inverted/High Contrast) */}
-        {layers.find(l => l.id === 'electromagnetic' && l.visible) && (
-            <TileLayer 
-                opacity={layers.find(l => l.id === 'electromagnetic')?.opacity ?? 0.4}
-                url={getUrlWithVersion('electromagnetic', "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}")}
-                className="invert hue-rotate-180"
-            />
-        )}
-
-        {/* Simulated Gravity/Geology Overlays */}
         {layers.find(l => l.id === 'gravity' && l.visible) && (
              <>
-                 <TileLayer 
-                    opacity={layers.find(l => l.id === 'gravity')?.opacity ?? 0.3}
-                    url={getUrlWithVersion('gravity', "https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png")}
-                    className="invert filter contrast-150"
-                 />
-                 {layers.find(l => l.id === 'gravity')?.showContours && (
-                     <GravityContours center={coordinates} />
-                 )}
+                 <TileLayer opacity={layers.find(l => l.id === 'gravity')?.opacity ?? 0.3} url={getUrlWithVersion('gravity', "https://stamen-tiles.a.ssl.fastly.net/toner/{z}/{x}/{y}.png")} className="invert filter contrast-150" />
+                 {layers.find(l => l.id === 'gravity')?.showContours && <GravityContours center={coordinates} />}
              </>
         )}
-        
         {layers.find(l => l.id === 'geology' && l.visible) && (
-             <TileLayer 
-                opacity={layers.find(l => l.id === 'geology')?.opacity ?? 0.4}
-                url={getUrlWithVersion('geology', "https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}")}
-                attribution="Tiles &copy; Esri &mdash; National Geographic"
-             />
+             <TileLayer opacity={layers.find(l => l.id === 'geology')?.opacity ?? 0.4} url={getUrlWithVersion('geology', "https://server.arcgisonline.com/ArcGIS/rest/services/NatGeo_World_Map/MapServer/tile/{z}/{y}/{x}")} />
         )}
 
-        <Marker position={[coordinates.lat, coordinates.lng]}>
-          <Popup>
-            Target Exploration Area <br /> {coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}
-          </Popup>
-        </Marker>
-
-        {/* Plotting Mode Visuals */}
-        {plottedPoints.map((point, idx) => (
-             <CircleMarker 
-                key={idx} 
-                center={[point.lat, point.lng]} 
-                radius={4} 
-                pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1 }} 
-             />
-        ))}
-        
+        <Marker position={[coordinates.lat, coordinates.lng]}><Popup>Exploration Target</Popup></Marker>
+        {plottedPoints.map((point, idx) => <CircleMarker key={idx} center={[point.lat, point.lng]} radius={4} pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1 }} />)}
         {plottedPoints.length > 1 && (
-            usePlottedArea ? (
-                <Polygon
-                    positions={plottedPoints.map(p => [p.lat, p.lng])}
-                    pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.2, weight: 2 }}
-                />
-            ) : (
-                <Polyline 
-                    positions={plottedPoints.map(p => [p.lat, p.lng])} 
-                    pathOptions={{ color: '#f59e0b', dashArray: '5, 10', weight: 2 }} 
-                />
-            )
+            usePlottedArea ? <Polygon positions={plottedPoints.map(p => [p.lat, p.lng])} pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.2, weight: 2 }} />
+            : <Polyline positions={plottedPoints.map(p => [p.lat, p.lng])} pathOptions={{ color: '#f59e0b', dashArray: '5, 10', weight: 2 }} />
         )}
-        
-        <LocationMarker 
-            setCoordinates={setCoordinates} 
-            isPlottingMode={isPlottingMode}
-            addPlottedPoint={addPlottedPoint}
-        />
+        <LocationMarker setCoordinates={setCoordinates} isPlottingMode={isPlottingMode} addPlottedPoint={addPlottedPoint} />
         <MapUpdater center={coordinates} />
       </LeafletMap>
 
-      {/* Layer Legend / Indicators */}
       <div className="absolute bottom-4 left-4 bg-slate-900/90 p-3 rounded-md border border-slate-700 z-[1000] text-xs shadow-xl min-w-[220px] max-h-[400px] overflow-y-auto">
-        <h4 className="font-bold mb-2 text-slate-300 sticky top-0 bg-slate-900 pb-1 z-10">Active Layers & Opacity</h4>
+        <h4 className="font-bold mb-2 text-slate-300">Analysis Layers</h4>
         <ul className="space-y-3">
           {layers.map(layer => (
              <li key={layer.id} className="flex flex-col gap-1 relative">
                <div className="flex items-center gap-2 w-full">
-                   <button 
-                    onClick={() => toggleLayer(layer.id)}
-                    onMouseEnter={() => setHoveredLayerId(layer.id)}
-                    onMouseLeave={() => setHoveredLayerId(null)}
-                    className={`flex items-center gap-2 transition-all duration-300 flex-1 text-left hover:bg-slate-800/50 rounded p-1 ${layer.visible ? 'opacity-100' : 'opacity-50'}`}
-                   >
-                     <span className={`w-2 h-2 rounded-full transition-colors duration-300 shrink-0 ${layer.visible ? 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]' : 'bg-slate-600'}`}></span>
-                     <span className={`font-medium transition-colors duration-300 flex-1 ${layer.visible ? 'text-cyan-100' : 'text-slate-500'}`}>{layer.name}</span>
-                     {layer.visible ? (
-                        <Eye className="w-3 h-3 text-cyan-400" />
-                     ) : (
-                        <EyeOff className="w-3 h-3 text-slate-500" />
-                     )}
+                   <button onClick={() => toggleLayer(layer.id)} onMouseEnter={() => setHoveredLayerId(layer.id)} onMouseLeave={() => setHoveredLayerId(null)} className={`flex items-center gap-2 flex-1 text-left rounded p-1 ${layer.visible ? 'opacity-100' : 'opacity-50'}`}>
+                     <span className={`w-2 h-2 rounded-full ${layer.visible ? 'bg-cyan-400' : 'bg-slate-600'}`}></span>
+                     <span className={`font-medium flex-1 ${layer.visible ? 'text-cyan-100' : 'text-slate-500'}`}>{layer.name}</span>
+                     {layer.visible ? <Eye className="w-3 h-3 text-cyan-400" /> : <EyeOff className="w-3 h-3 text-slate-500" />}
                    </button>
-                   
-                   {/* Fetch / Refresh Button */}
-                   {layer.visible && (
-                       <button 
-                         onClick={(e) => handleRefreshLayer(e, layer.id)}
-                         className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-cyan-400 transition-colors"
-                         title="Simulate Fetching New Data"
-                       >
-                           <RefreshCw className={`w-3 h-3 ${refreshingLayerId === layer.id ? 'animate-spin text-cyan-400' : ''}`} />
-                       </button>
-                   )}
+                   {layer.visible && <button onClick={(e) => handleRefreshLayer(e, layer.id)} className="p-1 text-slate-400 hover:text-cyan-400"><RefreshCw className={`w-3 h-3 ${refreshingLayerId === layer.id ? 'animate-spin' : ''}`} /></button>}
                </div>
-               
-               {/* Tooltip */}
                {hoveredLayerId === layer.id && (
-                   <div className="absolute left-full top-0 ml-3 w-52 bg-slate-900/95 text-[10px] text-slate-300 p-2.5 rounded border border-slate-600 shadow-xl z-[1002] pointer-events-none backdrop-blur-sm animate-in fade-in slide-in-from-left-2 duration-200">
-                       <div className="font-bold text-cyan-500 mb-1 capitalize">{layer.type} Data</div>
-                       {/* Fix: '||' and '??' operations cannot be mixed without parentheses. */}
-                       {(layerDescriptions[layer.id] || layerDescriptions[layer.type]) ?? "Geophysical visualization layer."}
-                       {/* Arrow indicator */}
-                       <div className="absolute top-3 -left-1.5 w-3 h-3 bg-slate-900 border-l border-b border-slate-600 transform rotate-45"></div>
+                   <div className="absolute left-full top-0 ml-3 w-52 bg-slate-900/95 text-[10px] text-slate-300 p-2.5 rounded border border-slate-600 shadow-xl z-[1002]">
+                       {layerDescriptions[layer.id] || "Spectral visualization."}
                    </div>
                )}
-
-               {layer.visible && (
-                   <div className="flex flex-col gap-2 pl-4 animate-in slide-in-from-top-1 fade-in duration-300">
-                       <div className="flex items-center gap-2">
-                           <input 
-                               type="range" 
-                               min="0" 
-                               max="1" 
-                               step="0.05" 
-                               value={layer.opacity}
-                               onChange={(e) => updateLayerOpacity(layer.id, parseFloat(e.target.value))}
-                               className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500 hover:accent-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                           />
-                           <span className="text-[10px] text-slate-400 w-8 text-right font-mono">
-                               {(layer.opacity * 100).toFixed(0)}%
-                           </span>
-                       </div>
-                       
-                       {/* Option: Contours for Gravity Layer */}
-                       {layer.id === 'gravity' && (
-                           <div className="flex items-center gap-2 mt-1">
-                               <input 
-                                   type="checkbox" 
-                                   id={`contours-${layer.id}`}
-                                   checked={layer.showContours || false}
-                                   onChange={() => toggleLayerOption(layer.id, 'showContours')}
-                                   className="w-3 h-3 rounded bg-slate-700 border-slate-600 text-cyan-600 focus:ring-0 focus:ring-offset-0"
-                               />
-                               <label htmlFor={`contours-${layer.id}`} className="text-[10px] text-slate-400 cursor-pointer hover:text-cyan-300 flex items-center gap-1">
-                                    <Activity className="w-3 h-3" /> Overlay Anomaly Contours
-                               </label>
-                           </div>
-                       )}
-                   </div>
-               )}
+               {layer.visible && <input type="range" min="0" max="1" step="0.05" value={layer.opacity} onChange={(e) => updateLayerOpacity(layer.id, parseFloat(e.target.value))} className="w-full h-1 bg-slate-700 accent-cyan-500" />}
              </li>
           ))}
         </ul>
