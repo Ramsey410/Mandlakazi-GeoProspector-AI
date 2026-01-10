@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer as LeafletMap, TileLayer, Marker, Popup, useMap, useMapEvents, Polyline, CircleMarker, Polygon, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
@@ -70,11 +69,16 @@ function LocationMarker({
   return null;
 }
 
-function MapUpdater({ center }: { center: Coordinates }) {
+function MapUpdater({ center, plottedPoints, usePlottedArea }: { center: Coordinates, plottedPoints: Coordinates[], usePlottedArea: boolean }) {
   const map = useMap();
   useEffect(() => {
-    map.setView([center.lat, center.lng], 13);
-  }, [center, map]);
+    if (usePlottedArea && plottedPoints.length >= 3) {
+        const bounds = L.latLngBounds(plottedPoints.map(p => [p.lat, p.lng]));
+        map.fitBounds(bounds, { padding: [50, 50], animate: true });
+    } else {
+        map.setView([center.lat, center.lng], 13);
+    }
+  }, [center, plottedPoints, usePlottedArea, map]);
   return null;
 }
 
@@ -178,16 +182,50 @@ const MapComponent: React.FC<MapComponentProps> = ({
         )}
 
         <Marker position={[coordinates.lat, coordinates.lng]}><Popup>Exploration Target</Popup></Marker>
-        {plottedPoints.map((point, idx) => <CircleMarker key={idx} center={[point.lat, point.lng]} radius={4} pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 1 }} />)}
+        
+        {plottedPoints.map((point, idx) => (
+            <CircleMarker 
+                key={idx} 
+                center={[point.lat, point.lng]} 
+                radius={isPlottingMode ? 6 : 4} 
+                pathOptions={{ 
+                    color: '#f59e0b', 
+                    fillColor: '#f59e0b', 
+                    fillOpacity: 1,
+                    weight: 2
+                }} 
+            />
+        ))}
+
         {plottedPoints.length > 1 && (
-            usePlottedArea ? <Polygon positions={plottedPoints.map(p => [p.lat, p.lng])} pathOptions={{ color: '#f59e0b', fillColor: '#f59e0b', fillOpacity: 0.2, weight: 2 }} />
-            : <Polyline positions={plottedPoints.map(p => [p.lat, p.lng])} pathOptions={{ color: '#f59e0b', dashArray: '5, 10', weight: 2 }} />
+            usePlottedArea ? (
+                <Polygon 
+                    positions={plottedPoints.map(p => [p.lat, p.lng])} 
+                    pathOptions={{ 
+                        color: '#f59e0b', 
+                        fillColor: '#f59e0b', 
+                        fillOpacity: 0.15, 
+                        weight: 4,
+                        dashArray: '10, 5'
+                    }} 
+                />
+            ) : (
+                <Polyline 
+                    positions={plottedPoints.map(p => [p.lat, p.lng])} 
+                    pathOptions={{ 
+                        color: '#f59e0b', 
+                        dashArray: '5, 10', 
+                        weight: 3 
+                    }} 
+                />
+            )
         )}
+        
         <LocationMarker setCoordinates={setCoordinates} isPlottingMode={isPlottingMode} addPlottedPoint={addPlottedPoint} />
-        <MapUpdater center={coordinates} />
+        <MapUpdater center={coordinates} plottedPoints={plottedPoints} usePlottedArea={usePlottedArea} />
       </LeafletMap>
 
-      <div className="absolute bottom-4 left-4 bg-slate-900/90 p-3 rounded-md border border-slate-700 z-[1000] text-xs shadow-xl min-w-[220px] max-h-[400px] overflow-y-auto">
+      <div className="absolute bottom-4 left-4 bg-slate-900/90 p-3 rounded-md border border-slate-700 z-[1000] text-xs shadow-xl min-w-[220px] max-h-[400px] overflow-y-auto custom-scrollbar">
         <h4 className="font-bold mb-2 text-slate-300">Analysis Layers</h4>
         <ul className="space-y-3">
           {layers.map(layer => (

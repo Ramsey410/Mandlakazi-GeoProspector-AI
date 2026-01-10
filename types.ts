@@ -64,3 +64,21 @@ export interface User {
   name: string;
   avatar?: string;
 }
+
+// Tracing Types
+export interface TraceSpan {
+  id: string;
+  service: string;
+  operation: string;
+  startTime: number; // ms offset from trace start
+  duration: number; // ms
+  metadata?: Record<string, any>;
+  status: 'ok' | 'error' | 'warning';
+}
+
+export interface DistributedTrace {
+  id: string;
+  spans: TraceSpan[];
+  totalDuration: number;
+  timestamp: number;
+}
