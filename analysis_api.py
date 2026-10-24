@@ -64,7 +64,7 @@ from report_engine import (
     generate_pdf_report
 )
 from report_storage import persist_report, report_url
-from auth import check_rate_limit, get_current_user
+from auth import check_rate_limit, get_analyst_or_admin, get_current_user
 from database import User
 
 # Initialize Earth Engine on startup
@@ -147,6 +147,13 @@ async def run_analysis(request: PolygonRequest, background_tasks: BackgroundTask
         if area_km2 > 500:
             raise HTTPException(status_code=400, detail="AOI area exceeds the 500 km² v1.0 limit")
         
+        is_client_request = user.role == "client"
+        project_metadata = dict(request.metadata or {})
+        if is_client_request:
+            project_metadata["requested_by_role"] = "client"
+            project_metadata["coordinate_ring"] = request.coordinates[0]
+            project_metadata["client_released"] = False
+
         # Persist the job before starting work so Cloud Run restarts do not erase it.
         job_id = f"analysis_{uuid.uuid4().hex}"
         db = get_session()
@@ -156,28 +163,34 @@ async def run_analysis(request: PolygonRequest, background_tasks: BackgroundTask
                 user_id=user.id,
                 mineral_target=request.mineral.lower(),
                 location_name=request.name,
-                project_metadata=request.metadata or {},
+                project_metadata=project_metadata,
                 study_polygon=WKTElement(polygon_wkt(request.coordinates), srid=4326),
                 polygon_area_km2=area_km2,
-                status="queued"
+                status="pending_review" if is_client_request else "queued"
             ))
             db.commit()
         finally:
             db.close()
-        
-        # Queue background analysis
-        background_tasks.add_task(
-            execute_analysis,
-            job_id=job_id,
-            polygon_coords=request.coordinates,
-            mineral=request.mineral,
-            location_name=request.name or f"{request.mineral} Analysis"
+
+        if not is_client_request:
+            background_tasks.add_task(
+                execute_analysis,
+                job_id=job_id,
+                polygon_coords=request.coordinates,
+                mineral=request.mineral,
+                location_name=request.name or f"{request.mineral} Analysis"
+            )
+
+        status_message = (
+            "Request submitted for analyst review"
+            if is_client_request
+            else f"Analysis queued for {request.mineral} prospectivity"
         )
         
         return AnalysisResponse(
-            status="processing",
+            status="pending_review" if is_client_request else "processing",
             job_id=job_id,
-            message=f"Analysis queued for {request.mineral} prospectivity",
+            message=status_message,
             polygon_area_km2=area_km2
         )
         
@@ -418,15 +431,142 @@ async def get_analysis_status(job_id: str, user: User = Depends(get_current_user
     finally:
         db.close()
 
+@router.get("/mine")
+async def list_my_analyses(user: User = Depends(get_current_user)):
+    """List the authenticated user's analysis requests."""
+    db = get_session()
+    try:
+        analyses = (
+            db.query(Analysis)
+            .filter(Analysis.user_id == user.id)
+            .order_by(Analysis.created_at.desc())
+            .limit(100)
+            .all()
+        )
+        return [
+            {
+                "job_id": analysis.job_id,
+                "mineral": analysis.mineral_target,
+                "location": analysis.location_name,
+                "area_km2": analysis.polygon_area_km2,
+                "status": analysis.status,
+                "client_released": bool((analysis.project_metadata or {}).get("client_released")),
+                "created_at": analysis.created_at,
+            }
+            for analysis in analyses
+        ]
+    finally:
+        db.close()
+
+@router.get("/review-queue")
+async def list_client_review_queue(user: User = Depends(get_analyst_or_admin)):
+    """List client requests that need analyst review or release."""
+    db = get_session()
+    try:
+        analyses = (
+            db.query(Analysis)
+            .join(User, Analysis.user_id == User.id)
+            .filter(User.role == "client")
+            .order_by(Analysis.created_at.asc())
+            .limit(200)
+            .all()
+        )
+        return [
+            {
+                "job_id": analysis.job_id,
+                "client_email": analysis.user.email,
+                "mineral": analysis.mineral_target,
+                "location": analysis.location_name,
+                "area_km2": analysis.polygon_area_km2,
+                "status": analysis.status,
+                "client_released": bool((analysis.project_metadata or {}).get("client_released")),
+                "created_at": analysis.created_at,
+            }
+            for analysis in analyses
+            if analysis.status in {"pending_review", "queued", "processing"}
+            or (analysis.status == "complete" and not (analysis.project_metadata or {}).get("client_released"))
+        ]
+    finally:
+        db.close()
+
+@router.post("/review/{job_id}/start")
+async def start_client_analysis(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_analyst_or_admin),
+):
+    """Approve a client request for analysis and queue its processing."""
+    db = get_session()
+    try:
+        analysis = (
+            db.query(Analysis)
+            .join(User, Analysis.user_id == User.id)
+            .filter(Analysis.job_id == job_id, User.role == "client")
+            .one_or_none()
+        )
+        if not analysis:
+            raise HTTPException(status_code=404, detail="Client request not found")
+        if analysis.status != "pending_review":
+            raise HTTPException(status_code=409, detail="Client request is not awaiting review")
+
+        coordinates = (analysis.project_metadata or {}).get("coordinate_ring")
+        if not coordinates:
+            raise HTTPException(status_code=409, detail="Client request is missing its AOI")
+
+        analysis.status = "queued"
+        mineral = analysis.mineral_target
+        location_name = analysis.location_name or f"{mineral} Analysis"
+        db.commit()
+    finally:
+        db.close()
+
+    background_tasks.add_task(
+        execute_analysis,
+        job_id=job_id,
+        polygon_coords=[coordinates],
+        mineral=mineral,
+        location_name=location_name,
+    )
+    return {"job_id": job_id, "status": "queued"}
+
+@router.post("/review/{job_id}/release")
+async def release_client_analysis(job_id: str, user: User = Depends(get_analyst_or_admin)):
+    """Release a completed client report after analyst review."""
+    db = get_session()
+    try:
+        analysis = (
+            db.query(Analysis)
+            .join(User, Analysis.user_id == User.id)
+            .filter(Analysis.job_id == job_id, User.role == "client")
+            .one_or_none()
+        )
+        if not analysis:
+            raise HTTPException(status_code=404, detail="Client request not found")
+        if analysis.status != "complete":
+            raise HTTPException(status_code=409, detail="Only completed reports can be released")
+        metadata = dict(analysis.project_metadata or {})
+        metadata["client_released"] = True
+        analysis.project_metadata = metadata
+        db.commit()
+        return {"job_id": job_id, "client_released": True}
+    finally:
+        db.close()
+
+def _get_analysis_for_user(db, job_id: str, user: User) -> Analysis:
+    analysis = db.query(Analysis).filter(Analysis.job_id == job_id).one_or_none()
+    if not analysis or (user.role == "client" and analysis.user_id != user.id):
+        raise HTTPException(status_code=404, detail="Analysis job not found")
+    if user.role == "client" and not (analysis.project_metadata or {}).get("client_released"):
+        raise HTTPException(status_code=403, detail="Report is awaiting analyst release")
+    return analysis
+
 @router.get("/results/{job_id}")
 async def get_analysis_results(job_id: str, user: User = Depends(get_current_user)):
     """Get detailed analysis results"""
     
     db = get_session()
     try:
-        analysis = db.query(Analysis).filter(Analysis.job_id == job_id, Analysis.user_id == user.id).one_or_none()
-        if not analysis:
-            raise HTTPException(status_code=404, detail="Analysis job not found")
+        _get_analysis_for_user(db, job_id, user)
         result = db.query(AnalysisCache).filter(AnalysisCache.polygon_hash == job_id).one_or_none()
         if not result:
             raise HTTPException(status_code=404, detail="Analysis results are not ready")
@@ -438,9 +578,7 @@ async def get_analysis_results(job_id: str, user: User = Depends(get_current_use
 async def get_report_url(job_id: str, user: User = Depends(get_current_user)):
     db = get_session()
     try:
-        analysis = db.query(Analysis).filter(Analysis.job_id == job_id, Analysis.user_id == user.id).one_or_none()
-        if not analysis:
-            raise HTTPException(status_code=404, detail="Analysis job not found")
+        _get_analysis_for_user(db, job_id, user)
         result = db.query(AnalysisCache).filter(AnalysisCache.polygon_hash == job_id).one_or_none()
         if not result:
             raise HTTPException(status_code=404, detail="Report is not ready")
@@ -461,9 +599,7 @@ async def export_geojson(job_id: str, user: User = Depends(get_current_user)):
     """Export borehole targets as GeoJSON"""
     db = get_session()
     try:
-        analysis = db.query(Analysis).filter(Analysis.job_id == job_id, Analysis.user_id == user.id).one_or_none()
-        if not analysis:
-            raise HTTPException(status_code=404, detail="Analysis job not found")
+        _get_analysis_for_user(db, job_id, user)
         result = db.query(AnalysisCache).filter(AnalysisCache.polygon_hash == job_id).one_or_none()
         if not result:
             raise HTTPException(status_code=404, detail="Analysis results are not ready")

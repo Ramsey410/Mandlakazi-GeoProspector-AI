@@ -75,7 +75,7 @@ For this release, apply `migrations/001_project_metadata.sql` to an existing dat
 psql $env:DATABASE_URL -f migrations/001_project_metadata.sql
 ```
 
-For production, set `AUTO_INIT_DB=false` and run schema changes as a release step. Set a strong `SECRET_KEY` (at least 32 random bytes), `DATABASE_URL`, `FRONTEND_URL`, `REPORT_BUCKET`, and `GOOGLE_CLOUD_PROJECT` through Secret Manager or Cloud Run environment configuration.
+For production, set `AUTO_INIT_DB=false` and run schema changes as a release step. Set a strong `SECRET_KEY` (at least 32 random bytes), `DATABASE_URL`, `FRONTEND_URL`, `REPORT_BUCKET`, and `GOOGLE_CLOUD_PROJECT` through Secret Manager or Cloud Run environment configuration. Analyst signup is restricted to `ramsey@mandlakazi.co.za` and `ramseyntombela@gmail.com`; configure `ANALYST_REGISTRATION_EMAILS` as a semicolon-separated environment value and keep `ANALYST_REGISTRATION_CODE` in Secret Manager. Do not put the invitation code in the repository or frontend build arguments.
 
 ## 4. Configure Earth Engine
 
@@ -103,7 +103,9 @@ gcloud run deploy geprospector-api `
   --concurrency 10 `
   --set-env-vars "AUTO_INIT_DB=false" `
   --set-env-vars "FRONTEND_URL=https://YOUR_FRONTEND_URL" `
-  --set-env-vars "DATABASE_URL=YOUR_DATABASE_URL"
+  --set-env-vars "DATABASE_URL=YOUR_DATABASE_URL" `
+  --set-env-vars "ANALYST_REGISTRATION_EMAILS=ramsey@mandlakazi.co.za;ramseyntombela@gmail.com" `
+  --set-secrets "ANALYST_REGISTRATION_CODE=analyst-registration-code:latest"
 ```
 
 Prefer Secret Manager instead of inline environment values for database credentials:

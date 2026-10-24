@@ -4,6 +4,8 @@ steps:
       - build
       - --build-arg
       - VITE_API_URL=${_VITE_API_URL}
+      - --build-arg
+      - VITE_GOOGLE_CLIENT_ID=${_VITE_GOOGLE_CLIENT_ID}
       - -t
       - ${_IMAGE}
       - -f
@@ -13,4 +15,5 @@ images:
   - ${_IMAGE}
 substitutions:
   _VITE_API_URL: https://example.invalid
+  _VITE_GOOGLE_CLIENT_ID: ''
   _IMAGE: us-central1-docker.pkg.dev/$PROJECT_ID/geprospector/frontend:latest

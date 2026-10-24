@@ -9,10 +9,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 import jwt
 import os
+import hmac
+import secrets
+import uuid
 from collections import defaultdict, deque
 from threading import Lock
 from time import monotonic
 from passlib.context import CryptContext
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
 
 from database import User, APIKey, get_session
 
@@ -249,6 +254,7 @@ async def verify_api_key(api_key: str, db: Session = Depends(get_session)) -> Us
 # ============================================================================
 
 from pydantic import BaseModel, EmailStr
+from typing import Literal
 
 class TokenResponse(BaseModel):
     """JWT token response"""
@@ -269,6 +275,13 @@ class UserLoginRequest(BaseModel):
     """User login request"""
     email: str
     password: str
+
+class GoogleLoginRequest(BaseModel):
+    credential: str
+    portal: Literal["client", "analyst"] = "client"
+
+class AnalystRegisterRequest(UserRegisterRequest):
+    registration_code: str
 
 class UserProfile(BaseModel):
     """User profile response"""
@@ -302,7 +315,7 @@ def _public_user(user: User) -> UserProfile:
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_rate_limit)])
 async def register(request: UserRegisterRequest):
-    """Create an analyst account and return its access tokens."""
+    """Create a client account and return its access tokens."""
     if len(request.password) < 12:
         raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
     if len(request.username.strip()) < 3:
@@ -318,11 +331,114 @@ async def register(request: UserRegisterRequest):
             password_hash=hash_password(request.password),
             full_name=request.full_name,
             organization=request.organization,
+            role="client",
+            is_active=True,
+            is_verified=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        return TokenResponse(
+            access_token=create_access_token(str(user.id)),
+            refresh_token=create_refresh_token(str(user.id)),
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
+    finally:
+        db.close()
+
+
+@router.post("/register/analyst", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, dependencies=[Depends(check_rate_limit)])
+async def register_analyst(request: AnalystRegisterRequest):
+    """Create an allowlisted analyst account only with an invitation code."""
+    registration_code = os.getenv("ANALYST_REGISTRATION_CODE")
+    if not registration_code:
+        raise HTTPException(status_code=503, detail="Analyst registration is not configured")
+    if not hmac.compare_digest(request.registration_code, registration_code):
+        raise HTTPException(status_code=403, detail="Invalid analyst invitation code")
+    allowed_emails = {
+        value.strip().lower()
+        for value in os.getenv("ANALYST_REGISTRATION_EMAILS", "").split(";")
+        if value.strip()
+    }
+    if not allowed_emails:
+        raise HTTPException(status_code=503, detail="Analyst registration allowlist is not configured")
+    if request.email.lower() not in allowed_emails:
+        raise HTTPException(status_code=403, detail="This email is not authorized for analyst registration")
+    if len(request.password) < 12:
+        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    if len(request.username.strip()) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+
+    db = get_session()
+    try:
+        email = request.email.lower()
+        username = request.username.strip()
+        if db.query(User).filter((User.email == email) | (User.username == username)).first():
+            raise HTTPException(status_code=409, detail="Email or username is already registered")
+        user = User(
+            email=email,
+            username=username,
+            password_hash=hash_password(request.password),
+            full_name=request.full_name,
+            organization=request.organization,
             role="analyst",
             is_active=True,
             is_verified=True,
         )
         db.add(user)
+        db.commit()
+        db.refresh(user)
+        return TokenResponse(
+            access_token=create_access_token(str(user.id)),
+            refresh_token=create_refresh_token(str(user.id)),
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
+    finally:
+        db.close()
+
+
+@router.post("/google", response_model=TokenResponse, dependencies=[Depends(check_rate_limit)])
+async def google_login(request: GoogleLoginRequest):
+    """Verify a Google ID token and sign in or create a client account."""
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if not client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+
+    try:
+        claims = id_token.verify_oauth2_token(
+            request.credential,
+            google_requests.Request(),
+            audience=client_id,
+        )
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid Google credential")
+
+    email = claims.get("email", "").lower()
+    if not email or claims.get("email_verified") is not True:
+        raise HTTPException(status_code=401, detail="A verified Google email is required")
+
+    db = get_session()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            if request.portal == "analyst":
+                raise HTTPException(status_code=403, detail="No analyst account exists for this Google email")
+            user = User(
+                email=email,
+                username=f"client_{uuid.uuid4().hex[:16]}",
+                password_hash=hash_password(secrets.token_urlsafe(48)),
+                full_name=claims.get("name"),
+                role="client",
+                is_active=True,
+                is_verified=True,
+            )
+            db.add(user)
+        elif not user.is_active:
+            raise HTTPException(status_code=403, detail="User account is inactive")
+        elif request.portal == "analyst" and user.role not in {"analyst", "admin"}:
+            raise HTTPException(status_code=403, detail="This Google account is not registered as an analyst")
+
+        user.last_login = datetime.utcnow()
         db.commit()
         db.refresh(user)
         return TokenResponse(

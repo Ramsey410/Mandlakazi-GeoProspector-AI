@@ -10,6 +10,7 @@ dockerfile = "Dockerfile.backend"
 DEBUG = "false"
 API_HOST = "0.0.0.0"
 API_PORT = "8000"
+ANALYST_REGISTRATION_EMAILS = "ramsey@mandlakazi.co.za;ramseyntombela@gmail.com"
 
 [[services]]
 protocol = "tcp"
@@ -40,6 +41,7 @@ timeout = "5s"
 # - DATABASE_URL
 # - GOOGLE_APPLICATION_CREDENTIALS
 # - SECRET_KEY
+# - ANALYST_REGISTRATION_CODE
 # - VITE_MAPBOX_TOKEN
 
 [processes]

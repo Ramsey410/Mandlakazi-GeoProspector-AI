@@ -25,7 +25,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     organization = Column(String(255), nullable=True)
-    role = Column(String(50), default='analyst', nullable=False)  # admin, analyst, viewer
+    role = Column(String(50), default='client', nullable=False)  # client, analyst, admin
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

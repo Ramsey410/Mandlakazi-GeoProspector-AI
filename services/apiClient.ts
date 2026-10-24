@@ -28,8 +28,20 @@ export const register = async (payload: RegistrationPayload) => {
   return response.data;
 };
 
+export const registerAnalyst = async (payload: RegistrationPayload & { registration_code: string }) => {
+  const response = await api.post('/api/v1/auth/register/analyst', payload);
+  localStorage.setItem('geoprospector_access_token', response.data.access_token);
+  return response.data;
+};
+
 export const login = async (payload: AuthPayload) => {
   const response = await api.post('/api/v1/auth/login', payload);
+  localStorage.setItem('geoprospector_access_token', response.data.access_token);
+  return response.data;
+};
+
+export const loginWithGoogle = async (credential: string, portal: 'client' | 'analyst' = 'client') => {
+  const response = await api.post('/api/v1/auth/google', { credential, portal });
   localStorage.setItem('geoprospector_access_token', response.data.access_token);
   return response.data;
 };
@@ -47,6 +59,18 @@ export const runAnalysis = async (payload: {
 
 export const getAnalysisStatus = async (jobId: string) =>
   (await api.get(`/api/v1/analysis/status/${jobId}`)).data;
+
+export const listMyAnalyses = async () =>
+  (await api.get('/api/v1/analysis/mine')).data;
+
+export const listClientReviewQueue = async () =>
+  (await api.get('/api/v1/analysis/review-queue')).data;
+
+export const startClientAnalysis = async (jobId: string) =>
+  (await api.post(`/api/v1/analysis/review/${jobId}/start`)).data;
+
+export const releaseClientAnalysis = async (jobId: string) =>
+  (await api.post(`/api/v1/analysis/review/${jobId}/release`)).data;
 
 export const getAnalysisResults = async (jobId: string) =>
   (await api.get(`/api/v1/analysis/results/${jobId}`)).data;

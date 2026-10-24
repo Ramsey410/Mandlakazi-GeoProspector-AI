@@ -4,6 +4,8 @@ import Sidebar from './components/Sidebar';
 import MapComponent from './components/MapContainer';
 import Dashboard from './components/Dashboard';
 import AuthPanel from './components/AuthPanel';
+import ClientPortal from './components/ClientPortal';
+import ClientReviewQueue from './components/ClientReviewQueue';
 import { Coordinates, AnalysisStatus, MiningReport, MapLayer, NearbyPlace, AnalysisJobSummary } from './types';
 import { analyzeGeology, generateChartData, quickGeologyScan, performDeepThinkingAnalysis, findNearbyMines } from './services/geminiService';
 import { getAnalysisResults, getAnalysisStatus, getProfile, logout, runAnalysis } from './services/apiClient';
@@ -15,6 +17,8 @@ const DEFAULT_COORDS: Coordinates = { lat: -25.2, lng: 27.08 };
 const App: React.FC = () => {
   const [authenticated, setAuthenticated] = useState(Boolean(localStorage.getItem('geoprospector_access_token')));
   const [profile, setProfile] = useState<any>(null);
+  const [profileLoading, setProfileLoading] = useState(Boolean(localStorage.getItem('geoprospector_access_token')));
+  const [showClientQueue, setShowClientQueue] = useState(false);
   const [coordinates, setCoordinates] = useState<Coordinates>(DEFAULT_COORDS);
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [report, setReport] = useState<MiningReport | null>(null);
@@ -28,11 +32,20 @@ const App: React.FC = () => {
   const activeAnalysisId = useRef(0);
 
   useEffect(() => {
-    if (!authenticated) return;
+    if (!authenticated) {
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+    let active = true;
+    setProfileLoading(true);
     getProfile().then(setProfile).catch(() => {
       logout();
       setAuthenticated(false);
+    }).finally(() => {
+      if (active) setProfileLoading(false);
     });
+    return () => { active = false; };
   }, [authenticated]);
 
   // Plotting Mode State
@@ -220,7 +233,22 @@ const App: React.FC = () => {
     }
   };
 
+  const signOut = () => {
+    logout();
+    setProfile(null);
+    setAuthenticated(false);
+  };
+
   if (!authenticated) return <AuthPanel onAuthenticated={() => setAuthenticated(true)} />;
+  if (profileLoading || !profile) {
+    return <main className="grid min-h-screen place-items-center bg-[#101716] text-sm text-slate-400">Loading your workspace…</main>;
+  }
+  if (profile.role !== 'analyst' && profile.role !== 'admin') {
+    return <ClientPortal email={profile.email} onSignOut={signOut} />;
+  }
+  if (showClientQueue) {
+    return <ClientReviewQueue email={profile.email} onClose={() => setShowClientQueue(false)} onSignOut={signOut} />;
+  }
 
   return (
     <div className="flex h-screen w-screen bg-slate-950 text-slate-200 font-sans selection:bg-amber-500/30 selection:text-amber-200">
@@ -304,7 +332,10 @@ const App: React.FC = () => {
           />
         </div>
       </main>
-      <button onClick={() => { logout(); setAuthenticated(false); }} className="fixed top-3 right-3 z-[1000] text-[10px] uppercase tracking-widest text-slate-400 hover:text-amber-400">Sign out</button>
+      <div className="fixed top-3 right-3 z-[1000] flex items-center gap-3">
+        <button onClick={() => setShowClientQueue(true)} className="border border-emerald-300/30 bg-slate-950/90 px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-200 hover:bg-emerald-300/10">Client requests</button>
+        <button onClick={signOut} className="bg-slate-950/90 px-2 py-2 text-[10px] uppercase tracking-widest text-slate-400 hover:text-amber-400">Sign out</button>
+      </div>
     </div>
   );
 };

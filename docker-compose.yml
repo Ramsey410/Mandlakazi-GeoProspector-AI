@@ -46,6 +46,8 @@ services:
       REDIS_URL: redis://redis:6379
       DEBUG: "True"
       FRONTEND_URL: http://localhost:5173
+      ANALYST_REGISTRATION_CODE: ${ANALYST_REGISTRATION_CODE:-}
+      ANALYST_REGISTRATION_EMAILS: "${ANALYST_REGISTRATION_EMAILS:-ramsey@mandlakazi.co.za;ramseyntombela@gmail.com}"
     ports:
       - "8000:8000"
     volumes:
