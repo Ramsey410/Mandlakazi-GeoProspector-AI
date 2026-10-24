@@ -1,0 +1,16 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - VITE_API_URL=${_VITE_API_URL}
+      - -t
+      - ${_IMAGE}
+      - -f
+      - Dockerfile.frontend
+      - .
+images:
+  - ${_IMAGE}
+substitutions:
+  _VITE_API_URL: https://example.invalid
+  _IMAGE: us-central1-docker.pkg.dev/$PROJECT_ID/geprospector/frontend:latest

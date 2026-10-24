@@ -1,0 +1,23 @@
+name: Security checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-security-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend dependencies
+        run: python -m pip install -r backend-requirements.txt
+      - name: Run backend tests
+        run: python -m pytest tests/ -q
+        env:
+          SECRET_KEY: test-only-geoprospector-ci-signing-key-0123456789

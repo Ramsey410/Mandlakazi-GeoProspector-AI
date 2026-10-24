@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS for geospatial data
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: mandlakazi-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mandlakazi_gis
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and Celery task queue
+  redis:
+    image: redis:7-alpine
+    container_name: mandlakazi-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: mandlakazi-backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mandlakazi_gis
+      REDIS_URL: redis://redis:6379
+      DEBUG: "True"
+      FRONTEND_URL: http://localhost:5173
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+      - ./backend-requirements.txt:/app/requirements.txt
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # React Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: mandlakazi-frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_MAPBOX_TOKEN: ${VITE_MAPBOX_TOKEN:-pk.test}
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host
+
+  # Celery Worker for async tasks (optional but recommended)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: mandlakazi-celery
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/mandlakazi_gis
+      REDIS_URL: redis://redis:6379
+      DEBUG: "False"
+    volumes:
+      - ./:/app
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    command: celery -A app.tasks worker --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: mandlakazi-network

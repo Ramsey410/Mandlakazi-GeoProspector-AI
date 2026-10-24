@@ -15,6 +15,6 @@ View your app in AI Studio: https://ai.studio/apps/drive/1-p94-sX-38X0oAcnSg-aKA
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+2. Set `VITE_API_URL` in [.env.local](.env.local) to the FastAPI service URL. Gemini keys are server-side only and are not bundled into the browser.
 3. Run the app:
    `npm run dev`

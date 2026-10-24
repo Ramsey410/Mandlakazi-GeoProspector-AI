@@ -1,0 +1,50 @@
+# Fly.io Deployment Configuration
+
+app = "mandlakazi-geoprospector"
+primary_region = "jhb"  # Johannesburg, South Africa
+
+[build]
+dockerfile = "Dockerfile.backend"
+
+[env]
+DEBUG = "false"
+API_HOST = "0.0.0.0"
+API_PORT = "8000"
+
+[[services]]
+protocol = "tcp"
+internal_port = 8000
+processes = ["app"]
+
+[[services.ports]]
+port = 80
+handlers = ["http"]
+
+[[services.ports]]
+port = 443
+handlers = ["tls", "http"]
+
+[checks]
+[checks.http]
+grace_period = "30s"
+interval = "10s"
+method = "GET"
+path = "/health"
+protocol = "http"
+timeout = "5s"
+
+# PostgreSQL connection via Fly Postgres or external
+# Set DATABASE_URL secret before deployment
+
+# Environment secrets (set with: flyctl secrets set VAR=value)
+# - DATABASE_URL
+# - GOOGLE_APPLICATION_CREDENTIALS
+# - SECRET_KEY
+# - VITE_MAPBOX_TOKEN
+
+[processes]
+app = "uvicorn main:app --host 0.0.0.0 --port 8000"
+
+# Run migrations on deployment
+[deploy]
+release_command = "python database.py"

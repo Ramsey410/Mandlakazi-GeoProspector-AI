@@ -1,0 +1,86 @@
+{
+  "model_version": "1.0",
+  "trained_on": "2026-09-25",
+  "dataset_path": "c:\\Users\\rntom\\Downloads\\Mandlakazi GeoProspector AI\\models\\synthetic_training_dataset.csv",
+  "training_samples": 420,
+  "test_samples": 180,
+  "features": [
+    "IOI",
+    "CMI",
+    "MMI",
+    "FMR",
+    "LINEAMENT_DENSITY",
+    "SLOPE",
+    "LAND_COVER",
+    "GEOLOGY_CODE"
+  ],
+  "target_column": "LABEL",
+  "class_labels": {
+    "0": "Low",
+    "1": "Moderate",
+    "2": "High"
+  },
+  "weighted_f1": 1.0,
+  "high_class_recall": 1.0,
+  "classification_report": {
+    "0": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 60.0
+    },
+    "1": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 60.0
+    },
+    "2": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 60.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 180.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 180.0
+    }
+  },
+  "best_params": {
+    "bootstrap": true,
+    "ccp_alpha": 0.0,
+    "class_weight": "balanced",
+    "criterion": "gini",
+    "max_depth": null,
+    "max_features": "sqrt",
+    "max_leaf_nodes": null,
+    "max_samples": null,
+    "min_impurity_decrease": 0.0,
+    "min_samples_leaf": 1,
+    "min_samples_split": 2,
+    "min_weight_fraction_leaf": 0.0,
+    "n_estimators": 300,
+    "n_jobs": -1,
+    "oob_score": true,
+    "random_state": 42,
+    "verbose": 0,
+    "warm_start": false
+  },
+  "quality_gates": {
+    "weighted_f1_pass": true,
+    "high_recall_pass": true,
+    "class_balance_pass": true
+  },
+  "promotion_ready": true,
+  "training_guide": "GeoProspector AI Training Dataset Guide.md",
+  "artifact_sha256": "1e738d6552fe2c26e040f9d210a07bd64318d45fac530b511d6df43b67c95a98"
+}

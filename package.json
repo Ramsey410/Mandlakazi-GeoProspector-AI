@@ -9,19 +9,34 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.0",
-    "lucide-react": "^0.554.0",
+    "@deck.gl/layers": "^9.0.0",
+    "@deck.gl/react": "^9.0.0",
     "@google/genai": "^1.30.0",
-    "react-dom": "^19.2.0",
-    "react-leaflet": "^5.0.0",
+    "@tanstack/react-query": "^5.28.0",
+    "@turf/turf": "^7.0.0",
+    "@types/leaflet": "^1.9.22",
+    "axios": "^1.6.0",
+    "deck.gl": "^9.0.0",
     "leaflet": "^1.9.4",
+    "lucide-react": "^0.554.0",
+    "mapbox-gl": "^3.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hook-form": "^7.48.0",
+    "react-leaflet": "^4.2.1",
+    "react-map-gl": "^7.1.0",
     "react-markdown": "^10.1.0",
-    "recharts": "^3.5.0"
+    "recharts": "^3.5.0",
+    "tailwindcss": "^3.4.0",
+    "zod": "^3.22.0",
+    "zustand": "^4.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "typescript": "^5.9.3",
+    "vite": "^5.4.10"
   }
 }
