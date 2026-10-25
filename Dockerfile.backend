@@ -1,0 +1,26 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# The pinned geospatial dependencies provide manylinux wheels, so no compiler
+# or system GIS packages are required in the Cloud Run image.
+
+# Copy requirements
+COPY backend-requirements.txt requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Fail the image build if the shipped model is missing, tampered with, or has
+# a schema/version mismatch. Runtime training is intentionally not implicit.
+RUN python -c "from ml_engine import load_random_forest; load_random_forest()"
+
+# Cloud Run sends traffic to the port in $PORT (normally 8080).
+EXPOSE 8080
+
+# Run FastAPI
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

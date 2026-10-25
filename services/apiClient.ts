@@ -1,0 +1,81 @@
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  headers: { 'Content-Type': 'application/json' }
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('geoprospector_access_token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export interface AuthPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegistrationPayload extends AuthPayload {
+  username: string;
+  full_name?: string;
+  organization?: string;
+}
+
+export const register = async (payload: RegistrationPayload) => {
+  const response = await api.post('/api/v1/auth/register', payload);
+  localStorage.setItem('geoprospector_access_token', response.data.access_token);
+  return response.data;
+};
+
+export const registerAnalyst = async (payload: RegistrationPayload & { registration_code: string }) => {
+  const response = await api.post('/api/v1/auth/register/analyst', payload);
+  localStorage.setItem('geoprospector_access_token', response.data.access_token);
+  return response.data;
+};
+
+export const login = async (payload: AuthPayload) => {
+  const response = await api.post('/api/v1/auth/login', payload);
+  localStorage.setItem('geoprospector_access_token', response.data.access_token);
+  return response.data;
+};
+
+export const loginWithGoogle = async (credential: string, portal: 'client' | 'analyst' = 'client') => {
+  const response = await api.post('/api/v1/auth/google', { credential, portal });
+  localStorage.setItem('geoprospector_access_token', response.data.access_token);
+  return response.data;
+};
+
+export const getProfile = async () => (await api.get('/api/v1/auth/me')).data;
+
+export const logout = () => localStorage.removeItem('geoprospector_access_token');
+
+export const runAnalysis = async (payload: {
+  coordinates: number[][][];
+  mineral: string;
+  name?: string;
+  metadata?: Record<string, unknown>;
+}) => (await api.post('/api/v1/analysis/run', payload)).data;
+
+export const getAnalysisStatus = async (jobId: string) =>
+  (await api.get(`/api/v1/analysis/status/${jobId}`)).data;
+
+export const listMyAnalyses = async () =>
+  (await api.get('/api/v1/analysis/mine')).data;
+
+export const listClientReviewQueue = async () =>
+  (await api.get('/api/v1/analysis/review-queue')).data;
+
+export const startClientAnalysis = async (jobId: string) =>
+  (await api.post(`/api/v1/analysis/review/${jobId}/start`)).data;
+
+export const releaseClientAnalysis = async (jobId: string) =>
+  (await api.post(`/api/v1/analysis/review/${jobId}/release`)).data;
+
+export const getAnalysisResults = async (jobId: string) =>
+  (await api.get(`/api/v1/analysis/results/${jobId}`)).data;
+
+export const getReportUrl = async (jobId: string) =>
+  (await api.get(`/api/v1/analysis/report/${jobId}`)).data;
+
+export default api;

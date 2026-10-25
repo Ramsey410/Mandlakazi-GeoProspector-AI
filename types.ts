@@ -31,9 +31,7 @@ export interface MiningReport {
   riskAssessment: string;
   sources: string[];
   rawMarkdown: string;
-  targetMinerals?: string;
   isDeepAnalysis?: boolean;
-  mapSnapshot?: string; // Base64 or URL of the captured map view
 }
 
 export interface MapLayer {
@@ -41,7 +39,7 @@ export interface MapLayer {
   name: string;
   visible: boolean;
   opacity: number;
-  type: 'satellite' | 'magnetic' | 'gravity' | 'geology' | 'radiometric' | 'electromagnetic' | 'terrain' | 'spectral';
+  type: 'satellite' | 'magnetic' | 'gravity' | 'geology' | 'radiometric' | 'electromagnetic' | 'terrain';
   showContours?: boolean;
 }
 
@@ -59,26 +57,12 @@ export interface NearbyPlace {
   uri?: string;
 }
 
-export interface User {
-  email: string;
-  name: string;
-  avatar?: string;
-}
-
-// Tracing Types
-export interface TraceSpan {
+export interface AnalysisJobSummary {
   id: string;
-  service: string;
-  operation: string;
-  startTime: number; // ms offset from trace start
-  duration: number; // ms
-  metadata?: Record<string, any>;
-  status: 'ok' | 'error' | 'warning';
-}
-
-export interface DistributedTrace {
-  id: string;
-  spans: TraceSpan[];
-  totalDuration: number;
-  timestamp: number;
+  title: string;
+  location: string;
+  targetMinerals: string[];
+  areaKm2: number;
+  status: 'Queued' | 'Acquiring Imagery' | 'Preprocessing' | 'Classifying Prospectivity' | 'Generating Report' | 'Report Ready';
+  reviewStatus: 'Pending Review' | 'Approved';
 }

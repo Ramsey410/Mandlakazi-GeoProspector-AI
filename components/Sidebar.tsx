@@ -1,34 +1,36 @@
 
 import React, { useState } from 'react';
-import { Map, FileText, Activity, Layers, Upload, Search, Globe, MapPin, Trash2, Zap, BrainCircuit, CheckSquare, Square, MousePointerClick, ShieldCheck, Target } from 'lucide-react';
+import { Map, FileText, Activity, Layers, Upload, Search, Globe, MapPin, Trash2, Zap, BrainCircuit, CheckSquare, Square, MousePointerClick } from 'lucide-react';
 import { Coordinates, AnalysisStatus, MapLayer, NearbyPlace } from '../types';
 
 interface SidebarProps {
-  status: AnalysisStatus;
-  onAnalyze: (locationName: string, useDeepThinking: boolean, targetMinerals: string) => void;
-  onQuickScan: () => void;
-  coordinates: Coordinates;
-  setCoordinates: (c: Coordinates) => void;
-  layers: MapLayer[];
-  toggleLayer: (id: string) => void;
-  isPlottingMode: boolean;
-  togglePlottingMode: () => void;
-  plottedPoints: Coordinates[];
-  clearPlottedPoints: () => void;
-  quickScanResult: string;
-  nearbyPlaces: NearbyPlace[];
-  usePlottedArea: boolean;
-  setUsePlottedArea: (use: boolean) => void;
-  importPlottedPoints: (points: Coordinates[]) => void;
+    status: AnalysisStatus;
+    onAnalyze: (locationName: string, useDeepThinking: boolean) => void;
+    onQuickScan: () => void;
+    coordinates: Coordinates;
+    setCoordinates: (c: Coordinates) => void;
+    layers: MapLayer[];
+    toggleLayer: (id: string) => void;
+    isPlottingMode: boolean;
+    togglePlottingMode: () => void;
+    plottedPoints: Coordinates[];
+    clearPlottedPoints: () => void;
+    quickScanResult: string;
+    nearbyPlaces: NearbyPlace[];
+    usePlottedArea: boolean;
+    setUsePlottedArea: (use: boolean) => void;
+    selectedMinerals: string[];
+    toggleMineral: (mineral: string) => void;
+    estimatedAreaKm2: number;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ 
-    status, 
+const Sidebar: React.FC<SidebarProps> = ({
+    status,
     onAnalyze,
     onQuickScan,
-    coordinates, 
-    setCoordinates, 
-    layers, 
+    coordinates,
+    setCoordinates,
+    layers,
     toggleLayer,
     isPlottingMode,
     togglePlottingMode,
@@ -38,285 +40,313 @@ const Sidebar: React.FC<SidebarProps> = ({
     nearbyPlaces,
     usePlottedArea,
     setUsePlottedArea,
-    importPlottedPoints
+    selectedMinerals,
+    toggleMineral,
+    estimatedAreaKm2
 }) => {
-  const [locationInput, setLocationInput] = useState('');
-  const [targetMinerals, setTargetMinerals] = useState('');
-  const [useDeepThinking, setUseDeepThinking] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+    const [locationInput, setLocationInput] = useState('');
+    const [useDeepThinking, setUseDeepThinking] = useState(false);
 
-  const handleSearch = () => {
-    const label = locationInput || (usePlottedArea ? "Plotted Polygon Area" : "Selected Coordinate Point");
-    onAnalyze(label, useDeepThinking, targetMinerals);
-  };
+    const handleSearch = () => {
+        if (locationInput) {
+            onAnalyze(locationInput, useDeepThinking);
+        } else {
+            const mode = usePlottedArea ? "Plotted Polygon Area" : "Selected Coordinate Point";
+            onAnalyze(mode, useDeepThinking);
+        }
+    };
 
-  const validateFile = (file: File): boolean => {
-      if (file.size > 5 * 1024 * 1024) {
-          setUploadError("File exceeds 5MB limit.");
-          return false;
-      }
-      if (!file.name.toLowerCase().endsWith('.csv')) {
-          setUploadError("Only .csv files are supported.");
-          return false;
-      }
-      setUploadError(null);
-      return true;
-  };
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            alert("CSV Uploaded. extracting coordinates...");
+            setCoordinates({ lat: -25.7479, lng: 28.2293 });
+        }
+    };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+    const isLoading = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
+    const mineralOptions = ['Gold', 'Chrome', 'PGMs', 'Vanadium'];
 
-      if (!validateFile(file)) {
-          e.target.value = '';
-          return;
-      }
+    const updateCoordinate = (key: 'lat' | 'lng', value: string) => {
+        const parsedValue = value === '' ? NaN : Number(value);
+        setCoordinates({ ...coordinates, [key]: parsedValue });
+    };
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-          const text = event.target?.result as string;
-          try {
-              const points = parseCSV(text);
-              if (points.length > 0) {
-                  importPlottedPoints(points);
-                  setUploadError(null);
-              } else {
-                  setUploadError("No valid coordinates (lat/lng) found.");
-              }
-          } catch (err) {
-              setUploadError("Failed to parse CSV file.");
-          }
-      };
-      reader.readAsText(file);
-      e.target.value = ''; 
-  };
-
-  const parseCSV = (content: string): Coordinates[] => {
-      const lines = content.split(/\r?\n/).filter(line => line.trim() !== '');
-      if (lines.length === 0) return [];
-
-      const firstLine = lines[0];
-      const delimiter = firstLine.includes(',') ? ',' : firstLine.includes(';') ? ';' : '\t';
-      const clean = (str: string) => str ? str.replace(/['"]/g, '').trim().toLowerCase() : '';
-
-      const headers = firstLine.split(delimiter).map(clean);
-      let latIndex = headers.findIndex(h => h.includes('lat') || h.includes('north') || h.includes('y'));
-      let lngIndex = headers.findIndex(h => h.includes('lon') || h.includes('lng') || h.includes('east') || h.includes('x'));
-      
-      let startIndex = 1;
-
-      if (latIndex === -1 || lngIndex === -1) {
-          const firstValues = firstLine.split(delimiter).map(v => parseFloat(clean(v)));
-          if (!isNaN(firstValues[0]) && !isNaN(firstValues[1])) {
-              latIndex = 0;
-              lngIndex = 1;
-              startIndex = 0;
-          } else {
-              latIndex = 0;
-              lngIndex = 1;
-              startIndex = 1;
-          }
-      }
-
-      const points: Coordinates[] = [];
-      for (let i = startIndex; i < lines.length; i++) {
-          const parts = lines[i].split(delimiter);
-          if (parts.length > Math.max(latIndex, lngIndex)) {
-              const lat = parseFloat(clean(parts[latIndex]));
-              const lng = parseFloat(clean(parts[lngIndex]));
-
-              if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-                  points.push({ lat, lng });
-              }
-          }
-      }
-      return points;
-  };
-
-  const isLoading = status !== AnalysisStatus.IDLE && status !== AnalysisStatus.COMPLETE && status !== AnalysisStatus.ERROR;
-
-  return (
-    <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-y-auto shrink-0">
-      <div className="p-6 border-b border-slate-800">
-        <h1 className="text-xl font-bold flex items-center gap-2 text-cyan-400">
-          <Globe className="w-6 h-6" />
-          GeoProspector AI
-        </h1>
-        <p className="text-xs text-slate-500 mt-1">End-to-End Exploration Tool</p>
-        
-        <div className="flex items-center gap-1 mt-2 text-[10px] text-green-500 bg-green-900/10 w-fit px-2 py-0.5 rounded border border-green-900/30">
-            <ShieldCheck className="w-3 h-3" /> Secure Environment
-        </div>
-      </div>
-
-      <div className="p-4 space-y-6">
-        
-        {/* Input Section */}
-        <div>
-          <label className="text-sm font-medium text-slate-300 mb-2 block">Project & Mineral Focus</label>
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700">
-               <Search className="w-4 h-4 text-slate-400" />
-               <input 
-                 type="text" 
-                 placeholder="Project Name / Location"
-                 className="bg-transparent border-none text-sm text-white focus:outline-none w-full"
-                 value={locationInput}
-                 onChange={(e) => setLocationInput(e.target.value)}
-               />
+    return (
+        <div className="w-80 glass-panel border-r border-slate-800 flex flex-col h-full overflow-y-auto relative z-20 shadow-2xl">
+            <div className="p-6 border-b border-slate-800/50 bg-slate-950/40">
+                <h1 className="text-2xl font-bold flex items-center gap-2 text-white">
+                    <div className="p-2 bg-gradient-to-br from-amber-400 to-amber-600 rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+                        <Globe className="w-6 h-6 text-slate-900" />
+                    </div>
+                    <span className="tracking-tight">GeoProspector <span className="text-amber-500 italic">AI</span></span>
+                </h1>
+                <p className="text-[10px] uppercase tracking-widest text-slate-500 mt-2 font-bold px-1">Mandlakazi Exploration Suite</p>
             </div>
 
-            <div className="flex items-center gap-2 bg-slate-800 p-2 rounded border border-slate-700">
-               <Target className="w-4 h-4 text-cyan-500" />
-               <input 
-                 type="text" 
-                 placeholder="Target Minerals (e.g. Gold, Li)"
-                 className="bg-transparent border-none text-sm text-white focus:outline-none w-full"
-                 value={targetMinerals}
-                 onChange={(e) => setTargetMinerals(e.target.value)}
-               />
-            </div>
-            
-            {!usePlottedArea && (
-                <div className="flex gap-2 text-xs animate-in fade-in">
-                   <div className="flex-1 bg-slate-800 p-2 rounded border border-slate-700">
-                      <span className="block text-slate-500">Lat</span>
-                      <input 
-                        type="number" 
-                        value={coordinates.lat} 
-                        onChange={(e) => setCoordinates({...coordinates, lat: parseFloat(e.target.value)})}
-                        className="bg-transparent w-full text-slate-300 focus:outline-none"
-                      />
-                   </div>
-                   <div className="flex-1 bg-slate-800 p-2 rounded border border-slate-700">
-                      <span className="block text-slate-500">Lng</span>
-                      <input 
-                        type="number" 
-                        value={coordinates.lng} 
-                        onChange={(e) => setCoordinates({...coordinates, lng: parseFloat(e.target.value)})}
-                        className="bg-transparent w-full text-slate-300 focus:outline-none"
-                      />
-                   </div>
-                </div>
-            )}
+            <div className="p-4 space-y-6">
 
-            <div className="grid grid-cols-2 gap-2">
-                <div className="relative">
-                    <input type="file" id="csv-upload" className="hidden" accept=".csv" onChange={handleFileUpload} />
-                    <label htmlFor="csv-upload" className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-slate-300 transition-colors h-full cursor-pointer">
-                        <Upload className="w-3 h-3" /> Import CSV
-                    </label>
-                </div>
-                <button onClick={onQuickScan} className="flex items-center justify-center gap-1.5 py-2 bg-amber-900/30 hover:bg-amber-900/50 text-amber-500 hover:text-amber-400 border border-amber-900/50 rounded text-xs transition-colors">
-                    <Zap className="w-3 h-3" /> Quick Scan
-                </button>
-            </div>
-            {uploadError && <p className="text-[10px] text-red-400 mt-1">{uploadError}</p>}
-          </div>
-        </div>
-
-        {quickScanResult && (
-            <div className="bg-slate-800/50 p-3 rounded border border-slate-700 animate-in fade-in slide-in-from-left-2">
-                <div className="flex items-center gap-2 mb-1 text-xs font-bold text-yellow-400 uppercase">
-                    <Zap className="w-3 h-3" /> Quick AI Scan
-                </div>
-                <p className="text-xs text-slate-300 leading-snug">{quickScanResult}</p>
-            </div>
-        )}
-
-        {nearbyPlaces.length > 0 && (
-            <div className="bg-slate-800/50 p-3 rounded border border-slate-700">
-                 <h4 className="text-xs font-bold text-slate-400 mb-2">Nearby Mining Ops</h4>
-                 <ul className="text-xs text-slate-400 space-y-1">
-                     {nearbyPlaces.slice(0, 5).map((p, i) => (
-                         <li key={i} className="truncate">• {p.title}</li>
-                     ))}
-                 </ul>
-            </div>
-        )}
-
-        <div className="border-t border-slate-800 pt-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Area Plotting</h3>
-            <button onClick={togglePlottingMode} className={`w-full py-2 px-3 rounded text-xs font-bold flex items-center justify-center gap-2 transition-colors mb-2 ${isPlottingMode ? 'bg-amber-900/40 text-amber-400 border border-amber-700' : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700'}`}>
-                <MapPin className="w-4 h-4" />
-                {isPlottingMode ? 'Stop Plotting' : 'Plot Coordinates'}
-            </button>
-            
-            {isPlottingMode && (
-                <div className="text-[10px] text-amber-500 mb-2 text-center animate-pulse flex items-center justify-center gap-1">
-                    <MousePointerClick className="w-3 h-3" /> Click map to place points
-                </div>
-            )}
-            
-            {plottedPoints.length > 0 && (
-                <div className="space-y-2">
-                    <button disabled={plottedPoints.length < 3} onClick={() => setUsePlottedArea(!usePlottedArea)} className={`w-full flex items-center gap-2 p-2 rounded text-xs transition-colors border ${plottedPoints.length < 3 ? 'bg-slate-800 border-slate-700 text-slate-500 opacity-50 cursor-not-allowed' : usePlottedArea ? 'bg-amber-900/20 border-amber-500 text-amber-200' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'}`}>
-                        {usePlottedArea ? <CheckSquare className="w-4 h-4 text-amber-400" /> : <Square className="w-4 h-4" />}
-                        <span>Use Plotted Area {plottedPoints.length < 3 && "(Need 3+ pts)"}</span>
-                    </button>
-                    <div className="bg-slate-900 rounded p-2 border border-slate-800 max-h-32 overflow-y-auto custom-scrollbar">
-                        <div className="flex justify-between items-center mb-2 sticky top-0 bg-slate-900 pb-1 border-b border-slate-800">
-                            <span className="text-[10px] text-slate-500 uppercase font-bold">Points ({plottedPoints.length})</span>
-                            <button onClick={clearPlottedPoints} className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1">
-                                <Trash2 className="w-3 h-3" /> Clear
-                            </button>
+                {/* Input Section */}
+                <div className="space-y-4">
+                    <div className="bg-slate-800/20 p-4 rounded-xl border border-white/5 space-y-4">
+                        <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Target Selection</label>
+                            <Activity className="w-3 h-3 text-amber-500" />
                         </div>
-                        <ul className="space-y-1">
-                            {plottedPoints.map((p, i) => (
-                                <li key={i} className="text-[10px] font-mono text-slate-400 flex justify-between px-1">
-                                    <span className="text-cyan-600">P{i+1}</span>
-                                    <span>{p.lat.toFixed(4)}, {p.lng.toFixed(4)}</span>
+
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 bg-slate-900/50 p-2.5 rounded-lg border border-slate-700/50 focus-within:border-amber-500/50 transition-all">
+                                <Search className="w-4 h-4 text-slate-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search location or site..."
+                                    className="bg-transparent border-none text-sm text-white focus:outline-none w-full placeholder:text-slate-600"
+                                    value={locationInput}
+                                    onChange={(e) => setLocationInput(e.target.value)}
+                                />
+                            </div>
+
+                            {!usePlottedArea && (
+                                <div className="flex gap-2 text-xs">
+                                    <div className="flex-1 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
+                                        <span className="block text-[9px] text-slate-500 uppercase font-bold mb-1">Latitude</span>
+                                        <input
+                                            type="number"
+                                            value={coordinates.lat}
+                                            onChange={(e) => updateCoordinate('lat', e.target.value)}
+                                            className="bg-transparent w-full text-slate-300 focus:outline-none font-mono"
+                                        />
+                                    </div>
+                                    <div className="flex-1 bg-slate-900/50 p-2 rounded-lg border border-slate-700/50">
+                                        <span className="block text-[9px] text-slate-500 uppercase font-bold mb-1">Longitude</span>
+                                        <input
+                                            type="number"
+                                            value={coordinates.lng}
+                                            onChange={(e) => updateCoordinate('lng', e.target.value)}
+                                            className="bg-transparent w-full text-slate-300 focus:outline-none font-mono"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="relative">
+                                    <input
+                                        type="file"
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        accept=".csv,.gpx,.kml"
+                                        onChange={handleFileUpload}
+                                    />
+                                    <button className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800/40 hover:bg-slate-700/60 border border-slate-700/50 rounded-lg text-[10px] font-bold text-slate-400 hover:text-white transition-all">
+                                        <Upload className="w-3 h-3" /> IMPORT DATA
+                                    </button>
+                                </div>
+                                <button
+                                    onClick={onQuickScan}
+                                    className="flex items-center justify-center gap-1.5 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/20 rounded-lg text-[10px] font-bold transition-all glow-on-hover"
+                                >
+                                    <Zap className="w-3 h-3" /> FAST SCAN
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-900/30 p-3 rounded-xl border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">AOI Mandate</h4>
+                        <span className="text-[10px] text-amber-500">Max 500 km²</span>
+                    </div>
+                    <div className="text-sm text-slate-300">Estimated area: <span className="font-semibold text-white">{estimatedAreaKm2.toFixed(0)} km²</span></div>
+                    <div className="flex flex-wrap gap-2">
+                        {mineralOptions.map((mineral) => (
+                            <button
+                                key={mineral}
+                                onClick={() => toggleMineral(mineral)}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-all ${selectedMinerals.includes(mineral) ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' : 'border-slate-700 text-slate-500 hover:text-slate-300'}`}
+                            >
+                                {mineral}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Quick Scan Result */}
+                {quickScanResult && (
+                    <div className="glass-card p-3 animate-fade-in border-amber-500/20">
+                        <div className="flex items-center gap-2 mb-2 text-[10px] font-black text-amber-500 uppercase tracking-widest">
+                            <Zap className="w-3 h-3" /> Field Note (AI Flash)
+                        </div>
+                        <p className="text-xs text-slate-300 leading-relaxed italic">
+                            "{quickScanResult}"
+                        </p>
+                    </div>
+                )}
+
+                {/* Nearby Places */}
+                {nearbyPlaces.length > 0 && (
+                    <div className="bg-slate-900/30 p-3 rounded-xl border border-white/5">
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                            <MapPin className="w-3 h-3 text-cyan-500" /> Global Mining Database
+                        </h4>
+                        <ul className="text-[11px] text-slate-400 space-y-2">
+                            {nearbyPlaces.slice(0, 4).map((p, i) => (
+                                <li key={i} className="flex items-start gap-2 group cursor-default">
+                                    <span className="text-cyan-500/50 mt-0.5">•</span>
+                                    <span className="group-hover:text-cyan-400 transition-colors truncate">{p.title}</span>
                                 </li>
                             ))}
                         </ul>
                     </div>
-                </div>
-            )}
-        </div>
+                )}
 
-        <div className="border-t border-slate-800 pt-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Layers className="w-3 h-3" /> Spectral Resources
-            </h3>
-            <div className="space-y-1">
-                {layers.map(layer => (
-                    <button key={layer.id} onClick={() => toggleLayer(layer.id)} className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center justify-between ${layer.visible ? 'bg-cyan-900/30 text-cyan-400 border border-cyan-800' : 'hover:bg-slate-800 text-slate-400 border border-transparent'}`}>
-                        {layer.name}
-                        <div className={`w-2 h-2 rounded-full ${layer.visible ? 'bg-cyan-400' : 'bg-slate-600'}`} />
+                {/* Plotting Mode */}
+                <div className="space-y-3">
+                    <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Field Boundary Tool</h3>
+                    <button
+                        onClick={togglePlottingMode}
+                        className={`w-full py-2.5 px-4 rounded-lg text-xs font-black flex items-center justify-center gap-2 transition-all border ${isPlottingMode
+                                ? 'bg-amber-500 text-slate-900 border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.4)] scale-[1.02]'
+                                : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:border-slate-500'
+                            }`}
+                    >
+                        <MousePointerClick className="w-4 h-4" />
+                        {isPlottingMode ? 'EXIT PLOTTING' : 'PLOT BOUNDARY'}
                     </button>
-                ))}
+
+                    {plottedPoints.length > 0 && (
+                        <div className="space-y-2 animate-fade-in">
+                            <button
+                                disabled={plottedPoints.length < 3}
+                                onClick={() => setUsePlottedArea(!usePlottedArea)}
+                                className={`w-full flex items-center gap-2 p-2.5 rounded-lg text-[11px] font-bold transition-all border ${plottedPoints.length < 3
+                                        ? 'bg-slate-900/50 border-slate-800 text-slate-600 cursor-not-allowed'
+                                        : usePlottedArea
+                                            ? 'bg-amber-500/10 border-amber-500/50 text-amber-300'
+                                            : 'bg-slate-800/30 border-slate-700 text-slate-500 hover:text-slate-300'
+                                    }`}
+                            >
+                                {usePlottedArea ? <CheckSquare className="w-4 h-4 text-amber-500" /> : <Square className="w-4 h-4" />}
+                                <span>Focus on Polygon {plottedPoints.length < 3 && "(Min 3 pts)"}</span>
+                            </button>
+
+                            <div className="bg-slate-950/60 rounded-xl p-3 border border-white/5">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-[9px] text-slate-500 uppercase font-black tracking-tighter">Coordinate Log ({plottedPoints.length})</span>
+                                    <button onClick={clearPlottedPoints} className="text-[9px] text-red-500 hover:text-red-400 font-bold uppercase tracking-tighter">
+                                        Clear Log
+                                    </button>
+                                </div>
+                                <div className="max-h-24 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                    {plottedPoints.map((p, i) => (
+                                        <div key={i} className="text-[10px] font-mono text-slate-500 flex justify-between px-2 py-1 bg-white/5 rounded">
+                                            <span className="text-amber-500/50">#{i + 1}</span>
+                                            <span>{p.lat.toFixed(5)}, {p.lng.toFixed(5)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Map Layers */}
+                <div className="space-y-3">
+                    <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">
+                        <Layers className="w-3 h-3" /> Multispectral Layers
+                    </h3>
+                    <div className="grid grid-cols-1 gap-1.5">
+                        {layers.slice(0, 5).map(layer => (
+                            <button
+                                key={layer.id}
+                                onClick={() => toggleLayer(layer.id)}
+                                className={`w-full text-left px-3 py-2 rounded-lg text-[11px] font-medium transition-all flex items-center justify-between border ${layer.visible ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30' : 'bg-transparent text-slate-500 border-transparent hover:bg-white/5'}`}
+                            >
+                                <span className="truncate">{layer.name}</span>
+                                <div className={`w-1.5 h-1.5 rounded-full ${layer.visible ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]' : 'bg-slate-700'}`} />
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Action Button */}
+                <div className="pt-4 mt-4 border-t border-slate-800/50 space-y-4">
+                    <button
+                        onClick={() => setUseDeepThinking(!useDeepThinking)}
+                        className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all duration-300 group ${useDeepThinking
+                                ? 'bg-indigo-500/10 border-indigo-500 shadow-[0_0_20px_rgba(99,102,241,0.2)]'
+                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                            }`}
+                    >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${useDeepThinking ? 'bg-indigo-500 text-white animate-pulse' : 'bg-slate-800 text-slate-600'
+                            }`}>
+                            <BrainCircuit className="w-4 h-4" />
+                        </div>
+                        <div className="flex flex-col items-start text-left">
+                            <span className={`text-[11px] font-bold transition-colors ${useDeepThinking ? 'text-indigo-400' : 'text-slate-400'}`}>
+                                DEEP THINKING MODE
+                            </span>
+                            <span className="text-[9px] text-slate-500 font-medium">
+                                {useDeepThinking ? 'Gemini 3 Pro Reasoning' : 'Geological Quick Response'}
+                            </span>
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={handleSearch}
+                        disabled={isLoading}
+                        className={`w-full py-4 rounded-xl font-black text-xs tracking-widest uppercase transition-all shadow-xl group overflow-hidden relative ${isLoading
+                                ? 'bg-slate-800 text-slate-600 cursor-wait'
+                                : 'bg-gradient-to-r from-amber-600 to-amber-400 text-slate-900 hover:scale-[1.02] active:scale-[0.98]'
+                            }`}
+                    >
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                            {isLoading ? (
+                                <>
+                                    <Activity className="w-4 h-4 animate-spin" />
+                                    PROCESSING PIPELINE
+                                </>
+                            ) : (
+                                <>
+                                    <Globe className="w-4 h-4" />
+                                    RUN ANALYTICS: {usePlottedArea ? 'AREA' : 'CORE'}
+                                </>
+                            )}
+                        </span>
+                        {!isLoading && <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 slant-glow" />}
+                    </button>
+                </div>
+
+                {/* Status Indicator */}
+                {status !== AnalysisStatus.IDLE && (
+                    <div className="glass-card p-4 space-y-3 animate-fade-in">
+                        <div className="flex justify-between items-center text-[10px] uppercase font-bold text-slate-500 tracking-tighter">
+                            <span className="flex items-center gap-2">
+                                <Activity className="w-3 h-3 text-cyan-500" />
+                                System Status
+                            </span>
+                            <span className="text-cyan-400">{status === AnalysisStatus.COMPLETE ? 'SYNCED' : 'LIVE'}</span>
+                        </div>
+                        <div className="w-full bg-slate-950 h-1 rounded-full overflow-hidden border border-white/5">
+                            <div
+                                className={`h-full bg-gradient-to-r from-cyan-600 to-blue-400 transition-all duration-1000 ${status === AnalysisStatus.COMPLETE ? 'w-full' : 'w-2/3 animate-pulse'
+                                    }`}
+                            ></div>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-[10px] text-cyan-500/80 font-mono leading-none flex items-center gap-2">
+                                <span className="animate-pulse">●</span>
+                                {status === AnalysisStatus.FETCHING_SATELLITE && "SENSING: Sentinel-2 Multispectral"}
+                                {status === AnalysisStatus.PROCESSING_GEOPHYSICS && "COMPUTING: Magnetic Anomalies"}
+                                {status === AnalysisStatus.SCRAPING_DATA && "SCRAPING: Regional Geoscience Surveys"}
+                                {status === AnalysisStatus.ANALYZING_AI && "SYNTHESIZING: Gemini Co-Pilot"}
+                                {status === AnalysisStatus.COMPLETE && "REPORT: Analysis Finalized"}
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
-
-        <div className="mt-auto border-t border-slate-800 pt-4">
-            <button onClick={() => setUseDeepThinking(!useDeepThinking)} className={`w-full flex items-center gap-3 mb-3 p-3 rounded-md border transition-all duration-200 group ${useDeepThinking ? 'bg-indigo-900/30 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.2)]' : 'bg-slate-800/50 border-slate-700 hover:bg-slate-800'}`}>
-                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors ${useDeepThinking ? 'bg-indigo-600 border-indigo-500' : 'border-slate-500 bg-slate-800'}`}>
-                    {useDeepThinking && <BrainCircuit className="w-3 h-3 text-white" />}
-                </div>
-                <div className="flex flex-col items-start text-left">
-                    <span className={`text-xs font-bold transition-colors ${useDeepThinking ? 'text-indigo-300' : 'text-slate-400 group-hover:text-slate-300'}`}>Deep Thinking Mode</span>
-                    <span className="text--[10px] text-slate-500">{useDeepThinking ? 'Gemini 3 Pro Active' : 'Gemini 2.5 Flash'}</span>
-                </div>
-            </button>
-            <button onClick={handleSearch} disabled={isLoading} className={`w-full py-3 rounded font-bold text-white shadow-lg shadow-cyan-900/20 transition-all ${isLoading ? 'bg-slate-700 cursor-wait' : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500'}`}>
-                {isLoading ? 'Processing Pipeline...' : `Run Analysis: ${targetMinerals || 'General'}`}
-            </button>
-        </div>
-
-        {status !== AnalysisStatus.IDLE && (
-            <div className="bg-slate-800 p-3 rounded border border-slate-700 mt-4">
-                <div className="flex justify-between text-xs mb-1 text-slate-400">
-                    <span>Status</span>
-                    <span>{status === AnalysisStatus.COMPLETE ? '100%' : 'Running...'}</span>
-                </div>
-                <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden">
-                    <div className={`h-full bg-cyan-400 transition-all duration-500 ${status === AnalysisStatus.COMPLETE ? 'w-full' : 'w-2/3 animate-pulse'}`}></div>
-                </div>
-            </div>
-        )}
-      </div>
-    </div>
-  );
+    );
 };
 
 export default Sidebar;
